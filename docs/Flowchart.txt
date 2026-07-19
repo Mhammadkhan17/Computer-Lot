@@ -1,0 +1,47 @@
+# Enhanced System Flowchart (Mermaid) — Refined
+
+```mermaid
+graph TD
+    A[User / Buyer] -->|1. Browse & Add Lots| B[Next.js Product Catalog + Cart Drawer]
+    
+    subgraph "Frontend (Next.js Server Components + Zustand)"
+        B --> C[Zustand Cart persist]
+        C -->|2. Checkout Click| D[Send Cart + JWT to FastAPI]
+    end
+
+    subgraph "Backend (FastAPI - /checkout Endpoint)"
+        D -->|3. Validate JWT| E[Supabase Auth]
+        E -->|4. Fetch Profile| F[profiles Table]
+        F --> G{Wholesale Approved?}
+        
+        G -->|No| H[Apply Retail Price to ALL items]
+        G -->|Yes| I{Total Lots >= 10?}
+        I -->|No| H
+        I -->|Yes| J[Hybrid Pricing per ADR-001]
+        
+        H & J --> K[Check Stock for ALL items]
+        K -->|Any insufficient| L[Return 400 + out_of_stock[]]
+        K -->|All stock OK| M[Begin PostgreSQL Transaction]
+        
+        M --> N[Insert orders record]
+        N --> O[Insert order_items records]
+        O --> P[Call decrement_stock_inventory per item]
+        P -->|Any returns false| Q[ROLLBACK + Return 500]
+        P -->|All succeed| R[COMMIT]
+    end
+
+    R -->|Return Order Data + WhatsApp Link| S[Next.js Success Screen]
+    S -->|6. Open WhatsApp| T[WhatsApp Business Deep Link]
+    T -->|7. Merchant receives order| U[Merchant WhatsApp Chat]
+    
+    U -->|8. View details via link| V[Auth-Required Receipt Page /receipts/[id]]
+    V -->|9. Customer can view own| W[Order Owner View]
+    V -->|10. Admin can view all| X[Admin Dashboard View]
+    
+    X -->|11. Update Status| Y[Order Status: processing → completed / cancelled]
+    Y -->|12. On cancel: restock| Z[Call increment_stock_inventory]
+
+    style M fill:#22c55e,stroke:#166534
+    style Q fill:#ef4444,stroke:#991b1b
+    style L fill:#f59e0b,stroke:#b45309
+```

@@ -1,0 +1,248 @@
+# Blueprint: Hybrid Computer Lot Liquidation Platform (Enhanced v2)
+
+A high-performance, production-ready e-commerce portal for small-scale computer component and electronics liquidators. Unifies B2C retail and B2B wholesale purchasing with secure inventory management and zero-fee WhatsApp Business fulfillment routing.
+
+---
+
+## 1. Core Technology Stack (Updated)
+
+**Frontend**: Next.js 15 (App Router), TypeScript, Tailwind CSS, Shadcn/ui, Zustand + Zustand Middleware (persist)
+**Backend**: Python 3.12+, FastAPI, Pydantic v2, Uvicorn
+**Database & Platform**: Supabase (PostgreSQL + Auth + Storage + Edge Functions)
+**Additional Recommended**:
+- Rate limiting: SlowAPI
+- Testing: pytest + Playwright
+- Deployment: Vercel (Frontend) + Railway/Fly.io (Backend) + Supabase
+
+---
+
+## 2. Key Architecture Decisions
+
+See `docs/adr/` for full details:
+
+| ADR | Title | Summary |
+|-----|-------|---------|
+| 001 | Hybrid Wholesale Pricing | Per-product minimum + total ≥10 lots threshold |
+| 002 | Atomic Checkout Transaction | All-or-nothing PostgreSQL transaction on checkout |
+| 003 | API Boundary | Server Components for reads, FastAPI for writes |
+| 004 | Auth-Required Receipt Pages | Dual access: order owner + admin |
+| 005 | WhatsApp Fulfillment | No payment gateway, manual status updates |
+| 006 | Self-Serve Wholesale Approval | Form → pending → admin approve |
+| 007 | Stock Validation at Checkout | Server validates, error report (no auto-remove) |
+| 008 | For_Parts Visibility | Visible to all with "As-Is" badge |
+| 009 | Service Role Restricted | Only `/checkout` uses service_role key |
+
+---
+
+## 3. Glossary
+
+See `docs/glossary.md` for full terminology reference.
+
+---
+
+## 4. Enhanced Relational Database Schema
+
+```sql
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+CREATE TYPE user_role AS ENUM ('retail', 'wholesale_pending', 'wholesale_approved', 'admin');
+CREATE TYPE item_grade AS ENUM ('Grade_A', 'Grade_B', 'Grade_C', 'For_Parts');
+CREATE TYPE order_status AS ENUM ('pending_whatsapp', 'processing', 'completed', 'cancelled');
+
+-- Profiles
+CREATE TABLE public.profiles (
+    id UUID REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY,
+    full_name VARCHAR(255) NOT NULL,
+    company_name VARCHAR(255),
+    tax_registration_id VARCHAR(100),
+    role user_role DEFAULT 'retail',
+    phone VARCHAR(50),
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+-- Products
+CREATE TABLE public.products (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title VARCHAR(255) NOT NULL,
+    sku VARCHAR(100) UNIQUE NOT NULL,
+    description TEXT,
+    hardware_specifications JSONB DEFAULT '{}',
+    grade item_grade NOT NULL DEFAULT 'Grade_A',
+    items_per_lot INT DEFAULT 1 NOT NULL,
+    retail_price_per_lot DECIMAL(12,2) NOT NULL,
+    wholesale_price_per_lot DECIMAL(12,2) NOT NULL,
+    minimum_wholesale_lots INT DEFAULT 5 NOT NULL,
+    available_stock_lots INT DEFAULT 0 NOT NULL CHECK (available_stock_lots >= 0),
+    manifest_file_url TEXT,
+    images TEXT[],                      -- Array of Supabase Storage URLs
+    tags TEXT[],
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+-- Orders & Order Items
+CREATE TABLE public.orders (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    readable_order_id BIGSERIAL,
+    user_id UUID REFERENCES auth.users,
+    customer_name VARCHAR(255) NOT NULL,
+    customer_phone VARCHAR(50) NOT NULL,
+    total_amount DECIMAL(12,2) NOT NULL,
+    status order_status DEFAULT 'pending_whatsapp',
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+CREATE TABLE public.order_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    order_id UUID REFERENCES orders(id) ON DELETE CASCADE,
+    product_id UUID REFERENCES products(id),
+    quantity_ordered INT NOT NULL,
+    unit_price_applied DECIMAL(12,2) NOT NULL
+);
+
+-- Atomic Decrement Function
+CREATE OR REPLACE FUNCTION decrement_stock_inventory(row_id UUID, steps INT)
+RETURNS BOOLEAN AS $$
+DECLARE
+    rows_affected INT;
+BEGIN
+    UPDATE public.products
+    SET available_stock_lots = available_stock_lots - steps,
+        updated_at = NOW()
+    WHERE id = row_id 
+      AND available_stock_lots >= steps;
+
+    GET DIAGNOSTICS rows_affected = ROW_COUNT;
+    RETURN rows_affected > 0;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Symmetric Increment Function (for cancellations)
+CREATE OR REPLACE FUNCTION increment_stock_inventory(row_id UUID, steps INT)
+RETURNS BOOLEAN AS $$
+DECLARE
+    rows_affected INT;
+BEGIN
+    UPDATE public.products
+    SET available_stock_lots = available_stock_lots + steps,
+        updated_at = NOW()
+    WHERE id = row_id;
+
+    GET DIAGNOSTICS rows_affected = ROW_COUNT;
+    RETURN rows_affected > 0;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- RLS Policies
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.order_items ENABLE ROW LEVEL SECURITY;
+
+-- Policies
+CREATE POLICY "Public read products" ON products FOR SELECT USING (true);
+CREATE POLICY "Admin full access products" ON products FOR ALL USING (
+    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
+);
+
+CREATE POLICY "Users can view own orders" ON orders FOR SELECT USING (
+    user_id = auth.uid() OR 
+    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
+);
+```
+
+---
+
+## 5. Hybrid Wholesale Pricing Logic
+
+```
+IF user.role = 'wholesale_approved' AND total_lots_in_order >= 10 THEN
+    FOR EACH line_item IN order:
+        IF line_item.quantity >= product.minimum_wholesale_lots THEN
+            unit_price = product.wholesale_price_per_lot
+        ELSE
+            unit_price = product.retail_price_per_lot
+        END IF
+    END FOR
+ELSE
+    ALL items priced at retail_price_per_lot
+END IF
+```
+
+---
+
+## 6. Checkout Flow (Atomic Transaction)
+
+1. Validate JWT + fetch user profile
+2. Determine pricing (hybrid per ADR-001)
+3. Check stock for ALL items
+4. If any insufficient → return 400 with details
+5. BEGIN transaction
+6. Insert `orders` record
+7. Insert `order_items` records
+8. Call `decrement_stock_inventory` per item
+9. If any failure → ROLLBACK
+10. COMMIT → return order data + WhatsApp deep link
+
+---
+
+## 7. API Boundary
+
+| Layer | Read Operations | Write Operations |
+|-------|----------------|-----------------|
+| Next.js Server Components | Products, Orders, Receipts | — |
+| Supabase Auth SDK | — | Login, Signup |
+| FastAPI | — | Checkout (service_role) |
+
+---
+
+## 8. Security Architecture
+
+- Supabase JWT validation on all backend endpoints
+- Row Level Security policies on all tables
+- service_role key restricted to `/checkout` only
+- Rate limiting on `/checkout` (SlowAPI: 10 req/min/user)
+- Admin-only routes protected by role check
+- Auth-required receipt pages
+- Strict Pydantic v2 input validation
+
+---
+
+## 9. Order Fulfillment Flow
+
+```
+Checkout → order created (status: pending_whatsapp)
+    → Frontend redirects to WhatsApp link
+    → Merchant receives full order summary
+    → Merchant logs into dashboard
+    → Admin updates status: processing → completed / cancelled
+```
+
+WhatsApp deep link format:
+`https://wa.me/{MERCHANT_PHONE}?text={encoded_order_summary}`
+
+---
+
+## 10. Wholesale Approval Flow
+
+```
+User signs up (provides company_name + tax_registration_id)
+    → role set to wholesale_pending (or retail if fields empty)
+    → Admin sees "Pending Approvals" in dashboard
+    → Admin clicks Approve/Reject
+    → If approved: role → wholesale_approved
+    → If rejected: role stays retail (with reason noted)
+```
+
+---
+
+## 11. Future Extension Points
+
+- Payment gateway integration (Stripe/Razorpay)
+- Email notifications
+- Order status webhooks
+- Public shareable receipt links
+- Bulk upload via CSV/Excel
+- Advanced admin analytics
+- Multi-merchant WhatsApp routing

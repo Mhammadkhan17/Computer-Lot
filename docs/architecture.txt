@@ -1,0 +1,129 @@
+# Architecture Overview — Hybrid Computer Lot Liquidation Platform
+
+**Project**: Computer Lot Liquidation Platform (Enhanced v2)  
+**Status**: Production-Ready Blueprint  
+**Last Updated**: July 2026
+
+---
+
+## 1. High-Level Architecture
+
+Full-stack hybrid B2C + B2B e-commerce platform for computer component lot liquidation.
+
+**Stack:**
+- **Frontend**: Next.js 15 (App Router), TypeScript, Tailwind + Shadcn/ui, Zustand
+- **Backend**: FastAPI (Python 3.12), Pydantic v2
+- **Database**: Supabase (PostgreSQL + Auth + Storage)
+- **Fulfillment**: Zero-fee WhatsApp Business
+
+### Core Design Principles
+
+- **Separation of Concerns**: Reads (Server Components) vs Writes (FastAPI)
+- **Data Integrity First**: Atomic stock management via PostgreSQL function
+- **Simplicity & Reliability**: WhatsApp routing instead of payment gateways
+- **Security**: RLS + JWT + service_role restricted to single endpoint
+
+---
+
+## 2. System Flow (Checkout)
+
+```mermaid
+graph TD
+    A[User] -->|Browse + Cart| B[Next.js + Zustand]
+    B -->|JWT + Cart Items| C[FastAPI /checkout]
+    
+    subgraph "Pricing Engine"
+        C -->|Validate| D[Supabase Auth]
+        D -->|Role check| E[Hybrid Pricing]
+        E -->|Per-product minimum + 10-lot threshold| F[Priced Order]
+    end
+
+    subgraph "Atomic Transaction"
+        F -->|Stock check| G{All available?}
+        G -->|No| H[400 Error]
+        G -->|Yes| I[Transaction: Order + Items + Decrement]
+        I -->|Success| J[Order Data + WhatsApp Link]
+        I -->|Failure| K[Rollback]
+    end
+
+    J -->|WhatsApp Deep Link| L[Merchant Chat]
+```
+
+---
+
+## 3. Technology Stack
+
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| Frontend | Next.js 15, TypeScript, Tailwind + Shadcn/ui, Zustand | UI, Cart, Read-side data |
+| Backend | FastAPI (Python 3.12), Pydantic v2 | /checkout API, Write-side |
+| Database | Supabase (PostgreSQL) | Auth, Data, Storage, RLS |
+| Auth | Supabase Auth (JWT) | Authentication |
+| State | Zustand + persist | Shopping Cart |
+| Deployment | Vercel (FE) + Railway/Fly.io (BE) + Supabase | Hosting |
+
+---
+
+## 4. Database Schema (Core Tables)
+
+- **profiles** — User profiles + roles (retail, wholesale_pending, wholesale_approved, admin)
+- **products** — Inventory with retail & wholesale pricing, stock lots, grade
+- **orders** — Order header with customer info, status
+- **order_items** — Line items with applied pricing
+
+### Critical Functions
+- `decrement_stock_inventory(row_id, steps)` — Atomic stock reduction (checkout)
+- `increment_stock_inventory(row_id, steps)` — Symmetric stock increase (cancellation)
+
+---
+
+## 5. API Boundary
+
+| Operation | Handled By | Auth Key | Rationale |
+|-----------|-----------|----------|-----------|
+| Product catalog | Next.js Server Component | Supabase anon + RLS | Read-only, public |
+| Login / Signup | Supabase Auth SDK | — | Direct auth |
+| Order history | Next.js Server Component | Supabase user key | User's own data |
+| Receipt | Next.js Server Component | Supabase user key | Owner + admin via RLS |
+| Checkout | FastAPI /checkout | service_role | Requires bypass RLS for writes |
+| Dashboard | Next.js Server Component | Supabase user key | Admin RLS policy |
+
+---
+
+## 6. Key Architecture Decisions
+
+See `docs/adr/` for full Architecture Decision Records:
+
+1. **ADR-001**: Hybrid wholesale pricing (per-product + total threshold)
+2. **ADR-002**: Atomic all-or-nothing checkout transaction
+3. **ADR-003**: Server Components for reads, FastAPI for writes
+4. **ADR-004**: Auth-required receipt pages (owner + admin)
+5. **ADR-005**: WhatsApp fulfillment (no payment gateway)
+6. **ADR-006**: Self-serve wholesale approval flow
+7. **ADR-007**: Stock validation at checkout (error, no auto-remove)
+8. **ADR-008**: For_Parts visible to all with badge
+9. **ADR-009**: service_role restricted to /checkout only
+
+---
+
+## 7. Security Architecture
+
+- JWT validation on all FastAPI endpoints
+- RLS on all 4 tables (profiles, products, orders, order_items)
+- service_role key restricted to a single auditable endpoint
+- Rate limiting on /checkout (SlowAPI: 10 req/min/user)
+- Admin-only dashboard routes
+- Auth-required receipt pages
+- Strict Pydantic v2 input validation
+- Never expose raw service_role key in frontend code
+
+---
+
+## 8. Related Documents
+
+- `docs/b2b_project.txt` — Full blueprint
+- `docs/Flowchart.txt` — System flowchart (Mermaid)
+- `docs/Structure.txt` — Directory structure
+- `docs/glossary.md` — Project terminology
+- `docs/adr/` — Architecture Decision Records
+- `AGENTS.md` — AI agent development rules

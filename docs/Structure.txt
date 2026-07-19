@@ -1,0 +1,107 @@
+# Project Directory Structure (Enhanced v2)
+
+computer-lot-liquidation/
+├── frontend/                                 # Next.js 15 App Router Frontend
+│   ├── public/                               # Static assets (logos, icons, hero images)
+│   ├── src/
+│   │   ├── app/                              # App Router routes
+│   │   │   ├── globals.css                   # Tailwind v4 theme + fonts
+│   │   │   ├── layout.tsx                    # Root layout + providers
+│   │   │   ├── page.tsx                      # Home / Product Catalog
+│   │   │   ├── not-found.tsx                 # Custom 404
+│   │   │   ├── catalog-grid.tsx              # Client-side search + grid
+│   │   │   ├── checkout/
+│   │   │   │   ├── page.tsx                  # Checkout review page
+│   │   │   │   └── checkout-page.tsx         # Checkout client component
+│   │   │   ├── login/page.tsx                # Auth & Registration
+│   │   │   ├── receipts/[id]/
+│   │   │   │   ├── page.tsx                  # Secure order receipt (server)
+│   │   │   │   └── receipt-content.tsx       # Receipt client component
+│   │   │   ├── dashboard/
+│   │   │   │   ├── page.tsx                  # Admin dashboard (server)
+│   │   │   │   └── dashboard-content.tsx     # Dashboard client component
+│   │   │   └── api/                          # Optional Next.js API routes
+│   │   ├── components/
+│   │   │   ├── ui/                           # Shadcn/ui components
+│   │   │   │   ├── button.tsx
+│   │   │   │   ├── badge.tsx
+│   │   │   │   ├── card.tsx
+│   │   │   │   └── input.tsx
+│   │   │   ├── navbar.tsx
+│   │   │   ├── product-card.tsx
+│   │   │   ├── search-bar.tsx
+│   │   │   ├── cart-drawer.tsx
+│   │   │   └── checkout-button.tsx           # WhatsApp redirection logic
+│   │   ├── hooks/
+│   │   │   └── useCart.ts                    # Zustand cart store (with persist)
+│   │   ├── lib/
+│   │   │   └── utils.ts                      # cn() utility + helpers
+│   │   ├── utils/
+│   │   │   └── supabase/
+│   │   │       ├── client.ts                 # Browser Supabase client
+│   │   │       ├── server.ts                 # Server Component Supabase client
+│   │   │       └── middleware.ts             # Middleware Supabase client
+│   │   ├── middleware.ts                     # Next.js middleware (session refresh)
+│   │   └── types/
+│   │       └── index.ts                      # TypeScript interfaces
+│   ├── tsconfig.json
+│   ├── next.config.mjs
+│   ├── postcss.config.mjs
+│   ├── package.json
+│   └── .env.local
+│
+├── backend/                                  # FastAPI Backend
+│   ├── app/
+│   │   ├── __init__.py
+│   │   ├── main.py                           # FastAPI app initialization + CORS + routers
+│   │   ├── config.py                         # Pydantic settings + env validation
+│   │   ├── database.py                       # Supabase client factory
+│   │   ├── schemas/
+│   │   │   ├── __init__.py
+│   │   │   └── order.py                      # Pydantic models
+│   │   ├── routes/
+│   │   │   ├── __init__.py
+│   │   │   └── checkout.py                   # Enhanced checkout endpoint
+│   │   ├── models/                           # Optional Pydantic DB models
+│   │   │   └── __init__.py
+│   │   └── utils/
+│   │       ├── __init__.py
+│   │       └── security.py                   # Auth helpers, JWT verification
+│   ├── tests/
+│   │   ├── __init__.py
+│   │   ├── conftest.py                       # Test fixtures + mocks
+│   │   └── test_checkout.py                  # 7 tests covering auth/pricing/stock/WhatsApp
+│   ├── migrations/                           # Supabase SQL migrations
+│   ├── .venv/                                # Python virtual environment
+│   ├── requirements.txt
+│   ├── .env.example
+│   └── .env
+│
+├── supabase/                                 # Supabase specific files
+│   ├── migrations/
+│   │   └── 001_initial_schema.sql            # Full schema + enums + stock functions
+│   ├── seed.sql                              # Sample products & test users
+│   └── policies.sql                          # All RLS policies + auto-profile trigger
+│
+├── docs/                                     # Documentation
+│   ├── adr/                                  # Architecture Decision Records
+│   │   ├── 001-hybrid-wholesale-pricing.md
+│   │   ├── 002-atomic-checkout-transaction.md
+│   │   ├── 003-api-boundary-server-components-vs-fastapi.md
+│   │   ├── 004-auth-required-receipt-pages.md
+│   │   ├── 005-whatsapp-fulfillment-without-payment-gateway.md
+│   │   ├── 006-self-serve-wholesale-approval.md
+│   │   ├── 007-stock-validation-at-checkout.md
+│   │   ├── 008-for-parts-visibility.md
+│   │   └── 009-service-role-restricted-endpoint.md
+│   ├── b2b_project.txt                       # Main blueprint (latest version)
+│   ├── Flowchart.txt
+│   ├── Structure.txt
+│   ├── architecture.txt                      # Architecture overview
+│   ├── glossary.md                           # Project terminology
+│   └── dev_log.md                            # Development progress tracker
+│
+├── .gitignore
+├── AGENTS.md                                 # AI agent development rules
+├── README.md                                 # Project overview, setup instructions
+└── docker-compose.yml                        # Optional local dev with Supabase
