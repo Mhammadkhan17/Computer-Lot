@@ -53,4 +53,5 @@ export default async function ReceiptPage({ params }: Props) {
     }
   }
 
-  return <Receipt
+  return <ReceiptContent order={order as never} />
+}

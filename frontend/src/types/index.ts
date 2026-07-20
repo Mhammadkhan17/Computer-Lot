@@ -82,3 +82,32 @@ export interface CheckoutError {
   error: string
   out_of_stock?: StockError[]
 }
+
+export interface CsvImportResult {
+  inserted: number
+  errors: CsvImportError[]
+  total_rows: number
+}
+
+export interface CsvImportError {
+  row: number
+  sku: string
+  reason: string
+}
+
+export type ProductCsvColumn = keyof Pick<Product, "title" | "sku" | "description" | "grade" | "items_per_lot" | "retail_price_per_lot" | "wholesale_price_per_lot" | "minimum_wholesale_lots" | "available_stock_lots">
+
+export interface ProductFormData {
+  title: string
+  sku: string
+  description?: string
+  grade: ItemGrade
+  items_per_lot: number
+  retail_price_per_lot: number
+  wholesale_price_per_lot: number
+  minimum_wholesale_lots: number
+  available_stock_lots: number
+  imageUrls: string
+  tags: string
+  hardwareSpecs: string
+}

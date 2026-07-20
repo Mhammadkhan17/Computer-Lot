@@ -8,7 +8,9 @@ from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 
 from app.config import settings
+from app.routes.admin import router as admin_router
 from app.routes.checkout import router as checkout_router
+from app.routes.ws import router as ws_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -30,7 +32,9 @@ app.add_middleware(
 if not settings.debug:
     app.add_middleware(SlowAPIMiddleware)
 
+app.include_router(admin_router)
 app.include_router(checkout_router)
+app.include_router(ws_router)
 
 
 @app.get("/")

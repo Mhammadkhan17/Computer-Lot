@@ -4,6 +4,7 @@ import type { CartItem, Product } from "@/types"
 
 interface CartState {
   items: CartItem[]
+  cartOpen: boolean
   addItem: (product: Product, quantity?: number) => void
   removeItem: (productId: string) => void
   updateQuantity: (productId: string, quantity: number) => void
@@ -11,12 +12,14 @@ interface CartState {
   totalItems: () => number
   totalLots: () => number
   subtotal: (isWholesale: boolean) => number
+  setCartOpen: (open: boolean) => void
 }
 
 export const useCart = create<CartState>()(
   persist(
     (set, get) => ({
       items: [],
+      cartOpen: false,
 
       addItem: (product, quantity = 1) => {
         set((state) => {
@@ -65,7 +68,12 @@ export const useCart = create<CartState>()(
             : Number(i.product.retail_price_per_lot)
           return sum + price * i.quantity
         }, 0),
+
+      setCartOpen: (open) => set({ cartOpen: open }),
     }),
-    { name: "cart-storage" }
+    {
+      name: "cart-storage",
+      partialize: (state) => ({ items: state.items }),
+    }
   )
 )

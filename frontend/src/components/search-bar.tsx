@@ -52,7 +52,7 @@ export function SearchBar({ placeholder = "Search by name, SKU, or tag\u2026", o
 
   return (
     <div className="relative">
-      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#6b7885]" />
+      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
       <Input
         name="search-catalog"
         autoComplete="off"
@@ -65,7 +65,7 @@ export function SearchBar({ placeholder = "Search by name, SKU, or tag\u2026", o
         <button
           onClick={handleClear}
           aria-label="Clear search"
-          className="absolute right-2 top-1/2 -translate-y-1/2 text-[#6b7885] hover:text-[#14161a]"
+          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
         >
           <X className="h-4 w-4" aria-hidden="true" />
         </button>

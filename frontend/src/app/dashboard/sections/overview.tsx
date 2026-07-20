@@ -55,7 +55,7 @@ const statusVariant: Record<string, "outline" | "secondary" | "default" | "destr
 const chartConfig = {
   revenue: {
     label: "Revenue",
-    color: "#1f4e79",
+    color: "var(--color-accent)",
   },
 }
 
@@ -107,7 +107,7 @@ export function Overview({ orders, pendingApprovalsCount, productCount, loading 
       title: "Products",
       value: productCount,
       icon: Package,
-      change: "—",
+      change: "\u2014",
       positive: true,
     },
   ]
@@ -115,10 +115,10 @@ export function Overview({ orders, pendingApprovalsCount, productCount, loading 
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="font-display text-2xl font-bold text-[#14161a] text-pretty">
+        <h1 className="font-display text-2xl font-bold text-foreground text-pretty">
           Dashboard Overview
         </h1>
-        <p className="mt-1 text-sm text-[#6b7885]">
+        <p className="mt-1 text-sm text-muted-foreground">
           Key metrics and performance at a glance.
         </p>
       </div>
@@ -127,35 +127,35 @@ export function Overview({ orders, pendingApprovalsCount, productCount, loading 
         {stats.map((stat) => {
           const Icon = stat.icon
           return (
-            <Card key={stat.title} className="border-[#d7dce2] bg-white shadow-none">
+            <Card key={stat.title} className="border-border bg-card shadow-none">
               <CardHeader className="flex flex-row items-center justify-between p-4 pb-2">
-                <CardTitle className="text-sm font-medium text-[#6b7885]">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
                   {stat.title}
                 </CardTitle>
-                <Icon className="size-4 text-[#8896a4]" aria-hidden="true" />
+                <Icon className="size-4 text-muted-foreground/60" aria-hidden="true" />
               </CardHeader>
               <CardContent className="p-4 pt-0">
                 {loading ? (
-                  <Skeleton className="h-8 w-24 bg-[#e4e7eb]" />
+                  <Skeleton className="h-8 w-24" />
                 ) : (
                   <>
-                    <div className="text-2xl font-bold text-[#14161a]">
+                    <div className="text-2xl font-bold text-foreground">
                       {stat.value}
                     </div>
                     <p className="mt-1 flex items-center gap-1 text-xs">
                       {stat.positive ? (
-                        <ArrowUpRight className="size-3 text-[#45845f]" />
+                        <ArrowUpRight className="size-3 text-grade-a" />
                       ) : (
-                        <ArrowDownRight className="size-3 text-[#bf3a2b]" />
+                        <ArrowDownRight className="size-3 text-destructive" />
                       )}
                       <span
                         className={
-                          stat.positive ? "text-[#45845f]" : "text-[#bf3a2b]"
+                          stat.positive ? "text-grade-a" : "text-destructive"
                         }
                       >
                         {stat.change}
                       </span>
-                      <span className="text-[#8896a4]">vs last month</span>
+                      <span className="text-muted-foreground/60">vs last month</span>
                     </p>
                   </>
                 )}
@@ -166,43 +166,43 @@ export function Overview({ orders, pendingApprovalsCount, productCount, loading 
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Card className="border-[#d7dce2] bg-white shadow-none lg:col-span-2">
+        <Card className="border-border bg-card shadow-none lg:col-span-2">
           <CardHeader className="p-4 pb-0">
-            <CardTitle className="font-display text-base font-semibold text-[#14161a]">
+            <CardTitle className="font-display text-base font-semibold text-foreground">
               Revenue
             </CardTitle>
             <CardDescription>Daily revenue from orders</CardDescription>
           </CardHeader>
           <CardContent className="p-4">
             {loading ? (
-              <Skeleton className="h-[200px] w-full bg-[#e4e7eb]" />
+              <Skeleton className="h-[200px] w-full" />
             ) : chartData.length === 0 ? (
-              <div className="flex h-[200px] items-center justify-center text-sm text-[#8896a4]">
+              <div className="flex h-[200px] items-center justify-center text-sm text-muted-foreground">
                 No revenue data yet
               </div>
             ) : (
               <ChartContainer config={chartConfig} initialDimension={{ width: 600, height: 200 }}>
                 <BarChart data={chartData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e7eb" />
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" />
                   <XAxis
                     dataKey="date"
                     tickLine={false}
                     axisLine={false}
-                    tick={{ fill: "#8896a4", fontSize: 11 }}
+                    tick={{ fill: "var(--color-muted-foreground)", fontSize: 11 }}
                   />
                   <YAxis
                     tickLine={false}
                     axisLine={false}
-                    tick={{ fill: "#8896a4", fontSize: 11 }}
+                    tick={{ fill: "var(--color-muted-foreground)", fontSize: 11 }}
                     tickFormatter={(v: number) => `$${v}`}
                   />
                   <ChartTooltip
-                    cursor={{ fill: "rgba(0,0,0,0.04)" }}
+                    cursor={{ fill: "var(--color-muted)" }}
                     content={<ChartTooltipContent indicator="dot" />}
                   />
                   <Bar
                     dataKey="revenue"
-                    fill="var(--color-revenue)"
+                    fill="var(--color-accent)"
                     radius={[0, 0, 0, 0]}
                   />
                 </BarChart>
@@ -211,18 +211,18 @@ export function Overview({ orders, pendingApprovalsCount, productCount, loading 
           </CardContent>
         </Card>
 
-        <Card className="border-[#d7dce2] bg-white shadow-none">
+        <Card className="border-border bg-card shadow-none">
           <CardHeader className="p-4 pb-0">
-            <CardTitle className="font-display text-base font-semibold text-[#14161a]">
+            <CardTitle className="font-display text-base font-semibold text-foreground">
               Order Status
             </CardTitle>
             <CardDescription>Completion rate</CardDescription>
           </CardHeader>
           <CardContent className="p-4">
             {loading ? (
-              <Skeleton className="h-[200px] w-full bg-[#e4e7eb]" />
+              <Skeleton className="h-[200px] w-full" />
             ) : orders.length === 0 ? (
-              <div className="flex h-[200px] items-center justify-center text-sm text-[#8896a4]">
+              <div className="flex h-[200px] items-center justify-center text-sm text-muted-foreground">
                 No orders yet
               </div>
             ) : (
@@ -240,13 +240,13 @@ export function Overview({ orders, pendingApprovalsCount, productCount, loading 
                           {status.replace("_", " ")}
                         </Badge>
                         <div className="flex flex-1 items-center gap-2">
-                          <div className="h-2 flex-1 rounded-full bg-[#e4e7eb]">
+                          <div className="h-2 flex-1 rounded-full bg-muted">
                             <div
-                              className="h-full rounded-full bg-[#1f4e79] transition-all"
+                              className="h-full rounded-full bg-muted-foreground/40 transition-all"
                               style={{ width: `${pct}%` }}
                             />
                           </div>
-                          <span className="w-10 text-right font-mono text-xs text-[#6b7885]">
+                          <span className="w-10 text-right font-mono text-xs text-muted-foreground">
                             {pct}%
                           </span>
                         </div>
@@ -260,10 +260,10 @@ export function Overview({ orders, pendingApprovalsCount, productCount, loading 
         </Card>
       </div>
 
-      <Card className="border-[#d7dce2] bg-white shadow-none">
+      <Card className="border-border bg-card shadow-none">
         <CardHeader className="flex flex-row items-center justify-between p-4 pb-0">
           <div>
-            <CardTitle className="font-display text-base font-semibold text-[#14161a]">
+            <CardTitle className="font-display text-base font-semibold text-foreground">
               Recent Orders
             </CardTitle>
             <CardDescription>Latest {Math.min(5, orders.length)} orders</CardDescription>
@@ -273,17 +273,17 @@ export function Overview({ orders, pendingApprovalsCount, productCount, loading 
           {loading ? (
             <div className="flex flex-col gap-3">
               {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-10 w-full bg-[#e4e7eb]" />
+                <Skeleton key={i} className="h-10 w-full" />
               ))}
             </div>
           ) : orders.length === 0 ? (
-            <p className="text-sm text-[#8896a4]">No orders yet.</p>
+            <p className="text-sm text-muted-foreground">No orders yet.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm" aria-label="Recent orders">
                 <caption className="sr-only">Recent orders list</caption>
                 <thead>
-                  <tr className="border-b border-[#d7dce2] text-left text-xs font-semibold uppercase tracking-wider text-[#6b7885]">
+                  <tr className="border-b border-border text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     <th className="pb-2 pr-4">Order</th>
                     <th className="pb-2 pr-4">Customer</th>
                     <th className="pb-2 pr-4">Total</th>
@@ -295,15 +295,15 @@ export function Overview({ orders, pendingApprovalsCount, productCount, loading 
                   {orders.slice(0, 5).map((order) => (
                     <tr
                       key={order.id}
-                      className="border-b border-[#e4e7eb] last:border-0"
+                      className="border-b border-border last:border-0"
                     >
-                      <td className="py-2 pr-4 font-mono text-sm text-[#6b7885]">
+                      <td className="py-2 pr-4 font-mono text-sm text-muted-foreground">
                         #{order.readable_order_id}
                       </td>
-                      <td className="py-2 pr-4 text-[#14161a]">
+                      <td className="py-2 pr-4 text-foreground">
                         {order.customer_name}
                       </td>
-                      <td className="py-2 pr-4 font-mono font-medium text-[#14161a]">
+                      <td className="py-2 pr-4 font-mono font-medium text-foreground">
                         {currencyFormat.format(Number(order.total_amount))}
                       </td>
                       <td className="py-2 pr-4">
@@ -313,7 +313,7 @@ export function Overview({ orders, pendingApprovalsCount, productCount, loading 
                           {order.status.replace("_", " ")}
                         </Badge>
                       </td>
-                      <td className="py-2 font-mono text-[#6b7885]">
+                      <td className="py-2 font-mono text-muted-foreground">
                         {new Date(order.created_at).toLocaleDateString()}
                       </td>
                     </tr>

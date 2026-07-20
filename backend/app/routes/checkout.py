@@ -15,6 +15,7 @@ from app.schemas.order import (
     StockErrorItem,
 )
 from app.utils.security import get_current_user
+from app.utils.ws_manager import get_manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/checkout", tags=["checkout"])
@@ -46,7 +47,7 @@ def _build_whatsapp_link(
 
 
 @router.post("", response_model=CheckoutResponse | ErrorResponse)
-def create_checkout(
+async def create_checkout(
     checkout_req: CheckoutRequest,
     user: dict = Depends(get_current_user),
     supabase: Client = Depends(get_supabase),
@@ -156,6 +157,14 @@ def create_checkout(
         )
     finally:
         conn.close()
+
+    for resolved in resolved_items:
+        product = products_map[resolved.product_id]
+        new_stock = product["available_stock_lots"] - resolved.quantity_ordered
+        await get_manager().broadcast("stock_update", {
+            "product_id": resolved.product_id,
+            "available_stock_lots": new_stock,
+        })
 
     whatsapp_link = _build_whatsapp_link(readable_order_id, customer_name, total_amount, resolved_items)
 

@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, type ReactNode } from "react"
 
-type DashboardSection = "overview" | "orders" | "approvals"
+type DashboardSection = "overview" | "orders" | "approvals" | "products"
 
 interface DashboardContextValue {
   activeSection: DashboardSection

@@ -118,9 +118,28 @@ CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER
 SECURITY DEFINER SET search_path = public
 AS $$
+DECLARE
+    _company_name VARCHAR(255);
+    _tax_id VARCHAR(100);
+    _role user_role;
 BEGIN
-    INSERT INTO public.profiles (id, full_name, role)
-    VALUES (NEW.id, COALESCE(NEW.raw_user_meta_data->>'full_name', 'User'), 'retail');
+    _company_name := NULLIF(TRIM(NEW.raw_user_meta_data->>'company_name'::text), '');
+    _tax_id := NULLIF(TRIM(NEW.raw_user_meta_data->>'tax_registration_id'::text), '');
+
+    IF _company_name IS NOT NULL THEN
+        _role := 'wholesale_pending';
+    ELSE
+        _role := 'retail';
+    END IF;
+
+    INSERT INTO public.profiles (id, full_name, company_name, tax_registration_id, role)
+    VALUES (
+        NEW.id,
+        COALESCE(NEW.raw_user_meta_data->>'full_name', 'User'),
+        _company_name,
+        _tax_id,
+        _role
+    );
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;

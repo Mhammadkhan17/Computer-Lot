@@ -70,12 +70,12 @@ export function CheckoutButton() {
   return (
     <div className="space-y-2">
       {error && (
-        <div className="border border-[#bf3a2b] bg-[#fef2f0] p-3 font-mono text-xs text-[#bf3a2b]" role="alert" aria-live="polite">
+        <div className="border border-destructive bg-destructive/10 p-3 font-mono text-xs text-destructive" role="alert" aria-live="polite">
           {error}
         </div>
       )}
       <Button
-        className="w-full bg-[#d45113] py-6 text-base text-white hover:bg-[#bf4610]"
+        className="w-full bg-accent py-6 text-base text-accent-foreground hover:bg-accent/90"
         size="lg"
         disabled={loading || items.length === 0}
         onClick={handleCheckout}
