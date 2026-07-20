@@ -6,6 +6,11 @@ import { Button } from "@/components/ui/button"
 import { CheckoutButton } from "@/components/checkout-button"
 import { useCart } from "@/hooks/useCart"
 
+const currencyFormat = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+})
+
 export function CheckoutPage() {
   const { items, totalLots, subtotal } = useCart()
 
@@ -56,7 +61,7 @@ export function CheckoutPage() {
                   {item.product.title}
                 </p>
                 <p className="font-mono text-xs text-[#6b7885]">
-                  {itemWholesale ? "WHOLESALE" : "RETAIL"} &mdash; ${price.toFixed(2)} / lot
+                  {itemWholesale ? "WHOLESALE" : "RETAIL"} &mdash; {currencyFormat.format(price)} / lot
                 </p>
               </div>
               <div className="text-right">
@@ -64,7 +69,7 @@ export function CheckoutPage() {
                   QTY {item.quantity}
                 </p>
                 <p className="font-mono font-semibold text-[#14161a]">
-                  ${(price * item.quantity).toFixed(2)}
+                  {currencyFormat.format(price * item.quantity)}
                 </p>
               </div>
             </div>
@@ -91,7 +96,7 @@ export function CheckoutPage() {
           )}
           <div className="flex justify-between border-t border-[#d7dce2] pt-3 font-display text-lg font-bold text-[#14161a]">
             <span>Total</span>
-            <span className="font-mono">${subtotal(isWholesale).toFixed(2)}</span>
+            <span className="font-mono">{currencyFormat.format(subtotal(isWholesale))}</span>
           </div>
         </div>
       </div>

@@ -10,7 +10,7 @@ interface SearchBarProps {
   onSearch: (query: string) => void
 }
 
-export function SearchBar({ placeholder = "Search by name, SKU, or tag...", onSearch }: SearchBarProps) {
+export function SearchBar({ placeholder = "Search by name, SKU, or tag\u2026", onSearch }: SearchBarProps) {
   const searchParams = useSearchParams()
   const router = useRouter()
   const pathname = usePathname()
@@ -54,6 +54,8 @@ export function SearchBar({ placeholder = "Search by name, SKU, or tag...", onSe
     <div className="relative">
       <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#6b7885]" />
       <Input
+        name="search-catalog"
+        autoComplete="off"
         placeholder={placeholder}
         value={value}
         onChange={handleChange}
@@ -62,9 +64,10 @@ export function SearchBar({ placeholder = "Search by name, SKU, or tag...", onSe
       {value && (
         <button
           onClick={handleClear}
+          aria-label="Clear search"
           className="absolute right-2 top-1/2 -translate-y-1/2 text-[#6b7885] hover:text-[#14161a]"
         >
-          <X className="h-4 w-4" />
+          <X className="h-4 w-4" aria-hidden="true" />
         </button>
       )}
     </div>

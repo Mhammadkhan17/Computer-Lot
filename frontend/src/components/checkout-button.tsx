@@ -70,7 +70,7 @@ export function CheckoutButton() {
   return (
     <div className="space-y-2">
       {error && (
-        <div className="border border-[#bf3a2b] bg-[#fef2f0] p-3 font-mono text-xs text-[#bf3a2b]">
+        <div className="border border-[#bf3a2b] bg-[#fef2f0] p-3 font-mono text-xs text-[#bf3a2b]" role="alert" aria-live="polite">
           {error}
         </div>
       )}
@@ -80,7 +80,7 @@ export function CheckoutButton() {
         disabled={loading || items.length === 0}
         onClick={handleCheckout}
       >
-        {loading ? "Processing..." : "Checkout via WhatsApp"}
+        {loading ? "Processing\u2026" : "Checkout via WhatsApp"}
       </Button>
     </div>
   )

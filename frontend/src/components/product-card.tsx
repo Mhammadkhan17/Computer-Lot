@@ -6,6 +6,11 @@ import { useCart } from "@/hooks/useCart"
 import { Card, CardContent, CardFooter } from "@/components/ui/card"
 import type { Product } from "@/types"
 
+const currencyFormat = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+})
+
 const gradeConfig = {
   Grade_A: { label: "A", color: "bg-[#45845f]", badgeBg: "bg-[#45845f]/10", badgeText: "text-[#45845f]" },
   Grade_B: { label: "B", color: "bg-[#b8862c]", badgeBg: "bg-[#b8862c]/10", badgeText: "text-[#b8862c]" },
@@ -38,6 +43,9 @@ export function ProductCard({ product }: ProductCardProps) {
           <img
             src={imageUrl}
             alt={product.title}
+            width={400}
+            height={300}
+            loading="lazy"
             className="h-full w-full object-cover"
             onError={() => setImgError(true)}
           />
@@ -80,13 +88,13 @@ export function ProductCard({ product }: ProductCardProps) {
           <div className="flex items-center justify-between">
             <span className="text-[#6b7885]">Retail</span>
             <span className="font-mono font-medium text-[#14161a]">
-              ${Number(product.retail_price_per_lot).toFixed(2)}
+              {currencyFormat.format(Number(product.retail_price_per_lot))}
             </span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-[#6b7885]">Wholesale</span>
             <span className="font-mono font-medium text-[#1f4e79]">
-              ${Number(product.wholesale_price_per_lot).toFixed(2)}
+              {currencyFormat.format(Number(product.wholesale_price_per_lot))}
               {product.minimum_wholesale_lots > 1 && (
                 <span className="ml-1 text-[10px] text-[#6b7885]">
                   /{product.minimum_wholesale_lots}

@@ -32,7 +32,7 @@ export default async function Home() {
   )
 
   return (
-    <main>
+    <main id="main-content">
       <section className="border-b border-[#2a2e34] bg-[#14161a]">
         <div className="mx-auto max-w-7xl px-4 py-10 md:py-14">
           <div className="flex flex-wrap items-end justify-between gap-6">
@@ -41,7 +41,7 @@ export default async function Home() {
                 <span className="h-px w-5 bg-[#d45113]" />
                 INVENTORY
               </div>
-              <h1 className="font-display text-3xl font-bold tracking-tight text-white md:text-4xl">
+              <h1 className="font-display text-3xl font-bold tracking-tight text-white md:text-4xl text-pretty">
                 Computer Lots
               </h1>
               <p className="mt-2 max-w-xl text-sm leading-relaxed text-[#8896a4]">
@@ -99,7 +99,7 @@ export default async function Home() {
       </section>
 
       <section className="mx-auto max-w-7xl px-4 py-8">
-        <Suspense fallback={<div className="h-96 animate-pulse bg-[#e4e7eb]" />}>
+        <Suspense fallback={<div className="h-96 animate-pulse bg-[#e4e7eb]" aria-live="polite" />}>
           <CatalogGrid products={all} />
         </Suspense>
       </section>

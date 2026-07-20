@@ -22,6 +22,7 @@ export function ProfileDropdown({ email, role, isAdmin }: ProfileDropdownProps) 
   const router = useRouter()
 
   const handleSignOut = async () => {
+    if (!window.confirm("Are you sure you want to sign out?")) return
     const supabase = createClient()
     await supabase.auth.signOut()
     router.push("/")
