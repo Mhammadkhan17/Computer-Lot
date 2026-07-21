@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Search } from "lucide-react"
 import { createClient } from "@/utils/supabase/client"
+import { useWebSocket } from "@/hooks/useWebSocket"
 
 interface OrderItem {
   id: string
@@ -47,16 +48,26 @@ const nextStatus: Record<string, string> = {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
-interface OrdersSectionProps {
-  orders: Order[]
-  loading: boolean
-  onStatusChange?: () => void
-}
-
-export function OrdersSection({ orders, loading, onStatusChange }: OrdersSectionProps) {
+export function OrdersSection() {
+  const [orders, setOrders] = useState<Order[]>([])
+  const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [confirmCancel, setConfirmCancel] = useState<string | null>(null)
+
+  const refresh = useCallback(async () => {
+    const supabase = createClient()
+    const { data } = await supabase
+      .from("orders")
+      .select("*, order_items(*, products:product_id(title))")
+      .order("created_at", { ascending: false })
+    if (data) setOrders(data)
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { refresh() }, [refresh])
+
+  useWebSocket("order_status_update", useCallback(() => { refresh() }, [refresh]))
 
   const filtered = orders.filter(
     (o) =>
@@ -84,7 +95,7 @@ export function OrdersSection({ orders, loading, onStatusChange }: OrdersSection
         throw new Error(data.detail || "Status update failed")
       }
       toast.success(`Order #${orders.find((o) => o.id === orderId)?.readable_order_id ?? ""} marked as ${status}`)
-      onStatusChange?.()
+      refresh()
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Status update failed"
       toast.error(msg)

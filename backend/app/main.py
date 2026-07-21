@@ -10,6 +10,7 @@ from slowapi.util import get_remote_address
 from app.config import settings
 from app.routes.admin import router as admin_router
 from app.routes.checkout import router as checkout_router
+from app.routes.explore import router as explore_router
 from app.routes.ws import router as ws_router
 
 logging.basicConfig(level=logging.INFO)
@@ -34,6 +35,7 @@ if not settings.debug:
 
 app.include_router(admin_router)
 app.include_router(checkout_router)
+app.include_router(explore_router)
 app.include_router(ws_router)
 
 

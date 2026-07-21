@@ -6,6 +6,7 @@ import {
   Users,
   Package,
   Menu,
+  Compass,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -24,6 +25,7 @@ const navItems = [
   { section: "overview" as const, label: "Overview", icon: LayoutDashboard },
   { section: "orders" as const, label: "Orders", icon: ShoppingCart },
   { section: "products" as const, label: "Products", icon: Package },
+  { section: "sourcing" as const, label: "Sourcing", icon: Compass },
   { section: "approvals" as const, label: "Approvals", icon: Users },
 ]
 

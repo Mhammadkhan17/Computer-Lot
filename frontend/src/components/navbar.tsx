@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { ShoppingCart, LayoutDashboard } from "lucide-react"
+import { ShoppingCart, LayoutDashboard, Compass } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useCart } from "@/hooks/useCart"
 import { createClient } from "@/utils/supabase/client"
@@ -52,6 +52,16 @@ export function Navbar() {
           </span>
           <span>LOT&nbsp;LIQUIDATION</span>
         </Link>
+
+        <div className="hidden sm:flex items-center gap-1">
+          <Link
+            href="/explore"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <Compass className="h-4 w-4" aria-hidden="true" />
+            Explore
+          </Link>
+        </div>
 
         <div className="flex items-center gap-2">
           {user ? (

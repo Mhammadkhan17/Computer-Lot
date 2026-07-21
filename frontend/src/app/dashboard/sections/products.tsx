@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect, useCallback } from "react"
 import { Search, Plus, Upload, Download, Pencil, Trash2, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { createClient } from "@/utils/supabase/client"
@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog"
 import { AddProductModal } from "./add-product-modal"
 import { EditProductModal } from "./edit-product-modal"
+import { useWebSocket } from "@/hooks/useWebSocket"
 import type { Product } from "@/types"
 
 const currencyFormat = new Intl.NumberFormat("en-US", {
@@ -29,11 +30,6 @@ const gradeVariant: Record<string, "outline" | "secondary" | "default" | "destru
   Grade_B: "secondary",
   Grade_C: "outline",
   For_Parts: "destructive",
-}
-
-interface ProductsSectionProps {
-  products: Product[]
-  loading: boolean
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
@@ -52,8 +48,21 @@ async function broadcastProductUpdate() {
   }
 }
 
-export function ProductsSection({ products, loading }: ProductsSectionProps) {
+export function ProductsSection() {
+  const [products, setProducts] = useState<Product[]>([])
+  const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
+
+  const refresh = useCallback(async () => {
+    const supabase = createClient()
+    const { data } = await supabase.from("products").select("*").order("created_at", { ascending: false })
+    if (data) setProducts(data)
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { refresh() }, [refresh])
+
+  useWebSocket("product_update", useCallback(() => { window.location.reload() }, []))
   const [importing, setImporting] = useState(false)
   const [importErrors, setImportErrors] = useState<{ row: number; sku: string; reason: string }[] | null>(null)
   const [importInserted, setImportInserted] = useState(0)

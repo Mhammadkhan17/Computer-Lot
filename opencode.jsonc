@@ -5,6 +5,11 @@
       "type": "remote",
       "url": "https://mcp.supabase.com/mcp?project_ref=ybwbwllmryjdfqvfpcik",
       "enabled": true
+    },
+    "sequential-thinking": {
+      "type": "local",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-sequential-thinking"],
+      "enabled": true
     }
   }
 }

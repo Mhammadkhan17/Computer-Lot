@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useState, useCallback } from "react"
 import {
   ShoppingCart,
   DollarSign,
@@ -23,13 +24,8 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
 import { Bar, BarChart, XAxis, YAxis, CartesianGrid } from "recharts"
-
-interface OverviewProps {
-  orders: OrderOverview[]
-  pendingApprovalsCount: number
-  productCount: number
-  loading: boolean
-}
+import { createClient } from "@/utils/supabase/client"
+import { useWebSocket } from "@/hooks/useWebSocket"
 
 interface OrderOverview {
   id: string
@@ -73,7 +69,29 @@ function aggregateDailyRevenue(orders: OrderOverview[]) {
     .slice(-14)
 }
 
-export function Overview({ orders, pendingApprovalsCount, productCount, loading }: OverviewProps) {
+export function Overview() {
+  const [orders, setOrders] = useState<OrderOverview[]>([])
+  const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0)
+  const [productCount, setProductCount] = useState(0)
+  const [loading, setLoading] = useState(true)
+
+  const refresh = useCallback(async () => {
+    const supabase = createClient()
+    const [ordersRes, profilesRes, productsRes] = await Promise.all([
+      supabase.from("orders").select("id, readable_order_id, customer_name, total_amount, status, created_at").order("created_at", { ascending: false }),
+      supabase.from("profiles").select("role").eq("role", "wholesale_pending"),
+      supabase.from("products").select("id", { count: "exact", head: true }),
+    ])
+    setOrders(ordersRes.data || [])
+    setPendingApprovalsCount(profilesRes.data?.length ?? 0)
+    setProductCount(productsRes.count ?? 0)
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { refresh() }, [refresh])
+
+  useWebSocket("order_status_update", useCallback(() => { refresh() }, [refresh]))
+  useWebSocket("profile_update", useCallback(() => { refresh() }, [refresh]))
   const totalRevenue = orders.reduce(
     (sum, o) => sum + Number(o.total_amount),
     0

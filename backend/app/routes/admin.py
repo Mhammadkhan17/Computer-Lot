@@ -1,15 +1,13 @@
 import csv
 import io
 import logging
-from urllib.parse import quote
 
-import psycopg2
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
 from supabase import Client
 
-from app.config import settings
 from app.database import get_supabase
+from app.database_writer import DatabaseWriter, get_db_writer
 from app.schemas.admin import AdminActionResponse
 from app.schemas.order import OrderStatusUpdate
 from app.schemas.product import ProductImportResponse, RowImportError
@@ -18,16 +16,6 @@ from app.utils.ws_manager import get_manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["admin"])
-
-
-def _get_db_connection() -> psycopg2.extensions.connection:
-    return psycopg2.connect(
-        dbname=settings.supabase_db_name,
-        user=settings.supabase_db_user,
-        password=settings.supabase_db_password,
-        host=settings.supabase_db_host,
-        port=settings.supabase_db_port,
-    )
 
 
 def _assert_admin(user: dict, supabase: Client) -> None:
@@ -81,6 +69,7 @@ async def update_order_status(
     body: OrderStatusUpdate,
     user: dict = Depends(get_current_user),
     supabase: Client = Depends(get_supabase),
+    db_writer: DatabaseWriter = Depends(get_db_writer),
 ):
     _assert_admin(user, supabase)
 
@@ -91,38 +80,19 @@ async def update_order_status(
             detail=f"Invalid status. Must be one of: {', '.join(sorted(valid_statuses))}",
         )
 
-    conn = _get_db_connection()
-    try:
-        if body.status == "cancelled":
-            order_resp = supabase.table("order_items").select("product_id, quantity_ordered").eq("order_id", order_id).execute()
-            items = order_resp.data or []
-            if not items:
-                raise HTTPException(status_code=404, detail="Order not found or has no items")
+    if body.status == "cancelled":
+        order_resp = supabase.table("order_items").select(
+            "product_id, quantity_ordered"
+        ).eq("order_id", order_id).execute()
+        items = order_resp.data or []
+        if not items:
+            raise HTTPException(status_code=404, detail="Order not found or has no items")
+        for item in items:
+            db_writer.restock_product(item["product_id"], item["quantity_ordered"])
 
-            with conn:
-                with conn.cursor() as cur:
-                    for item in items:
-                        cur.callproc("increment_stock_inventory", (item["product_id"], item["quantity_ordered"]))
-
-        with conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE orders SET status = %s WHERE id = %s RETURNING id, user_id, readable_order_id",
-                    (body.status, order_id),
-                )
-                row = cur.fetchone()
-                if not row:
-                    raise HTTPException(status_code=404, detail="Order not found")
-
-                order_user_id = row[1]
-                readable_order_id = row[2]
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error("Order status update failed: %s", e)
-        raise HTTPException(status_code=500, detail="Order update failed")
-    finally:
-        conn.close()
+    success, order_user_id, readable_order_id = db_writer.update_order_status(order_id, body.status)
+    if not success:
+        raise HTTPException(status_code=404, detail="Order not found")
 
     mgr = get_manager()
     await mgr.broadcast_to_role(

@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.config import settings
 from app.database import get_supabase
+from app.database_writer import get_db_writer, InMemoryDatabaseWriter
 from app.utils.ws_manager import get_manager
 
 
@@ -47,6 +48,7 @@ def override_deps():
     global mock_supabase, products_table_mock
     mock_supabase = MagicMock()
     products_table_mock = MagicMock()
+    in_memory_writer = InMemoryDatabaseWriter()
 
     def mock_table(name):
         t = MagicMock()
@@ -74,6 +76,7 @@ def override_deps():
     mock_supabase.table.side_effect = mock_table
 
     app.dependency_overrides[get_supabase] = lambda: mock_supabase
+    app.dependency_overrides[get_db_writer] = lambda: in_memory_writer
     yield
     app.dependency_overrides.clear()
 
@@ -113,13 +116,10 @@ class TestAdminReject:
 
 
 class TestAdminOrderStatus:
-    @patch("app.routes.admin._get_db_connection")
-    def test_update_order_status(self, mock_get_db):
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = ("order-789", "retail-user", 42)
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
-        mock_get_db.return_value = mock_conn
+    def test_update_order_status(self):
+        in_memory = InMemoryDatabaseWriter()
+        in_memory.orders["order-789"] = {"user_id": "retail-user", "customer_name": "Test"}
+        app.dependency_overrides[get_db_writer] = lambda: in_memory
 
         resp = TestClient(app).patch(
             "/admin/orders/order-789/status",
@@ -129,14 +129,13 @@ class TestAdminOrderStatus:
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "updated"
+        app.dependency_overrides[get_db_writer] = lambda: InMemoryDatabaseWriter()
 
-    @patch("app.routes.admin._get_db_connection")
-    def test_cancel_order_restocks_items(self, mock_get_db):
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = ("order-789", "retail-user", 42)
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
-        mock_get_db.return_value = mock_conn
+    def test_cancel_order_restocks_items(self):
+        in_memory = InMemoryDatabaseWriter()
+        in_memory.orders["order-789"] = {"user_id": "retail-user", "customer_name": "Test"}
+        in_memory.stock = {"prod-1": 10, "prod-2": 5}
+        app.dependency_overrides[get_db_writer] = lambda: in_memory
 
         resp = TestClient(app).patch(
             "/admin/orders/order-789/status",
@@ -145,6 +144,10 @@ class TestAdminOrderStatus:
         )
         assert resp.status_code == 200
         assert resp.json()["status"] == "updated"
+        assert in_memory.stock["prod-1"] == 13
+        assert in_memory.stock["prod-2"] == 7
+        assert in_memory.order_statuses["order-789"] == "cancelled"
+        app.dependency_overrides[get_db_writer] = lambda: InMemoryDatabaseWriter()
 
     def test_update_status_rejects_non_admin(self):
         token = _make_token({"sub": "retail-user", "role": "retail"})
