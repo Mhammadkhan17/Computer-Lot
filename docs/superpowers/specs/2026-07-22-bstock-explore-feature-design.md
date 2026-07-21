@@ -6,113 +6,171 @@
 
 ## Overview
 
-Add an **Explore** page to the Computer-Lot platform that displays live computer/hardware liquidation listings from B-Stock's public search API. Users can browse listings and submit sourcing requests for lots they're interested in; admins manage these requests via the dashboard.
+Add an **Explore** page that displays live computer/hardware liquidation listings from B-Stock's public search API. Users browse listings and submit sourcing requests for lots they're interested in; admins manage these requests via the dashboard.
 
 ## Data Source: B-Stock Public Search API
 
-B-Stock (`bstock.com`) is the largest B2B liquidation marketplace network (Amazon, Best Buy, Target, Walmart, Home Depot, etc.). They expose a **public, unprotected search API** at `search.bstock.com` that returns all active auction lots as JSON with no authentication required.
+B-Stock (`bstock.com`) is the largest B2B liquidation marketplace network. They expose a **public, unprotected search API** at `search.bstock.com` that returns all active auction lots as JSON with no authentication required. Confirmed working — returns 200 with real data.
 
-### API characteristics
-- **Endpoint**: `search.bstock.com` (exact path TBD by reverse-engineering the React SPA at `bstock.com/all-auctions/`)
+### API details
+- **Endpoint**: `https://search.bstock.com/v1/all-listings/listings`
 - **Auth**: None — fully public
-- **Returns**: JSON with lot ID, title, current bid, MSRP/retail value, unit count, condition, source retailer, location, close time, listing URL, image URL, currency, number of bids, category
-- **Anti-bot**: None confirmed by multiple scraper reports
-- **Filterable**: search text, category, condition, bid range, etc.
+- **Method**: GET
+- **Params**: `sortBy`, `sortOrder`, `offset`, `limit` (max 100)
+- **Anti-bot**: None (confirmed by multiple scraper reports and direct curl test)
 
-### Backend fallback plan
-If the direct API path changes or is restricted, fall back to Camoufox (anti-detect Firefox browser, ~200MB) with Playwright to scrape B-Stock listing pages instead.
+### Response fields used
+`auctionUrl`, `title`, `winningBidAmount`, `retailPrice`, `unitCount`, `palletCount`, `condition`, `displayedCondition`, `storefrontName`, `region`, `endTime`, `primaryImageUrl`, `currency`, `numberOfBids`, `categories`, `inventoryType`
+
+### Filtering strategy
+B-Stock API supports `category` filter. We include results from `Electronics`, `Cell Phones`, `Major Appliances` categories. Then server-side post-filter to keep only listings whose title contains keywords matching computer hardware: `computer`, `laptop`, `desktop`, `monitor`, `server`, `hard drive`, `ssd`, `ram`, `motherboard`, `cpu`, `graphics card`, `gpu`, `networking`, `router`, `switch`, `peripheral`, `keyboard`, `mouse`, `tablet`, `ipad`, `macbook`, `thinkpad`, `chromebook`, `workstation`, as well as common brand names for computer hardware.
 
 ## Architecture
 
 ```
-Browser → /explore (Next.js Server Component)
+Browser → /explore (Next.js Server Component shell)
               ↓
-         <ExplorePage /> (Client Component)
-              ↓  on mount
-         GET /explore/listings (FastAPI proxy)
+         <ExplorePage /> (Client Component, fetches on mount)
+              ↓  GET /explore/listings?search=&max_results=50
+         FastAPI → httpx → search.bstock.com/v1/all-listings/listings
               ↓
-         httpx → search.bstock.com (no auth)
+         Normalizes response → returns { listings: [...], total: N }
               ↓
-         Returns JSON → renders listing grid
+         Renders listing grid with skeleton loading
 
-Sourcing Request:
-  User clicks "Request Lot"
+Request Lot:
+  User clicks "Request Lot" → quick form modal (qty + notes)
+       ↓  POST /explore/requests (JWT auth required)
+  FastAPI validates → inserts into sourcing_requests (Supabase)
        ↓
-  POST /explore/requests (FastAPI)
+  Returns { id } → toast confirmation
+
+Admin:
+  GET /admin/explore/requests (JWT + admin role)
        ↓
-  Inserts into sourcing_requests (Supabase)
-       ↓
-  Admin dashboard shows request
+  Dashboard table with filtering, sorting, inline status update
 ```
 
 ### Key characteristics
 - **Live on page load** — no DB cache, no stale data
-- **Skeleton loading** — show 12 skeleton cards matching the existing `ProductCard` style while fetching
-- **Refresh button** — re-fetches from B-Stock (useful if data doesn't load or user wants fresh results)
+- **Skeleton loading** — 12 skeleton cards matching ProductCard style while fetching
+- **Refresh button** — re-fetches from B-Stock
+- **Rate limited** — 10 req/min per user on the proxy endpoint (SlowAPI)
 
-## New Database Tables
+## Database: `sourcing_requests`
 
-### `sourcing_requests`
 | Column | Type | Notes |
 |--------|------|-------|
-| id | UUID PK | default gen_random_uuid() |
-| user_id | UUID FK → auth.users | who requested |
-| listing_url | TEXT | B-Stock lot URL |
-| title | TEXT | lot title from listing |
-| current_bid | NUMERIC(10,2) | price at time of request |
-| msrp | NUMERIC(10,2) | retail value |
-| quantity_requested | INT | how many they want |
-| notes | TEXT | optional user notes |
-| status | TEXT | 'pending', 'contacted', 'sourced', 'declined' |
-| created_at | TIMESTAMPTZ | default now() |
+| `id` | UUID PK | `gen_random_uuid()` |
+| `user_id` | UUID FK → `auth.users` | who requested |
+| `listing_url` | TEXT | B-Stock lot URL |
+| `title` | TEXT | lot title |
+| `current_bid` | NUMERIC(10,2) | price at time of request |
+| `msrp` | NUMERIC(10,2) | retail value |
+| `pallet_count` | INT | from listing |
+| `unit_count` | INT | number of units |
+| `source_retailer` | TEXT | e.g. "Amazon", "Target" |
+| `condition` | TEXT | e.g. "Used Good" |
+| `location` | TEXT | city/region |
+| `quantity_requested` | INT | from user form |
+| `notes` | TEXT | optional user notes |
+| `status` | TEXT | `pending`, `contacted`, `declined` |
+| `created_at` | TIMESTAMPTZ | `now()` |
 
-RLS: Users see their own requests. Admins see all.
+### RLS Policies
+- `SELECT` — user sees own `user_id`, admin sees all
+- `INSERT` — authenticated users (user_id forced server-side)
+- `UPDATE` — admin only (status changes)
+- `DELETE` — none
 
 ## Frontend
 
 ### `/explore` page
-- **Server Component shell** (`frontend/src/app/explore/page.tsx`) — basic layout, no data fetching
-- **Client Component** (`frontend/src/app/explore/explore-page.tsx`) — fetches listings on mount, renders grid
-- **Explore listing card** (`frontend/src/components/explore-card.tsx`) — similar to `ProductCard` but for external listings; shows title, bid price, MSRP, condition, location, units, closing time, "Request Lot" button
-- **Search/filter bar** — client-side filtering by keyword (mirrors existing `CatalogGrid` pattern)
+- **Server shell** (`frontend/src/app/explore/page.tsx`) — minimal layout wrapper
+- **Client component** (`frontend/src/components/explore-page.tsx`) — fetches on mount via `useEffect`, manages search state, renders grid
 
-### Admin Dashboard
-- New section in `frontend/src/app/dashboard/sections/sourcing.tsx`
-- Table of all sourcing requests with status management
+### ExploreCard
+- Matches existing `ProductCard` visual style (same Card component, font classes)
+- Shows: current bid, MSRP, condition, source retailer, location, closing time, pallet/unit count
+- Image: B-Stock's `primaryImageUrl` or fallback icon
+- Badge: condition label + "Live Auction"
+- Action: "Request Lot" button (instead of "Add to Cart")
+- No link to detail page (external B-Stock link on the card)
+
+### Search
+- Reuses existing `SearchBar` component
+- Client-side filter on title + source retailer
+
+### Request Lot Modal
+- shadcn `Dialog`
+- Fields: quantity (number, default 1) + notes (textarea, optional)
+- Submit → `POST /explore/requests` → toast on success
+- If unauthenticated: redirect to `/login?redirect=/explore`
+
+### Navbar
+- New "Explore" link in the nav bar (visible to all)
+
+### Admin Dashboard Section (`sourcing.tsx`)
+- Full table: title, user email/name, source retailer, bid/MSRP, status, created date, actions
+- Filter by status dropdown (`all` / `pending` / `contacted` / `declined`)
+- Sortable by created date
+- Click row → expand details panel (user contact info, full listing data, notes)
+- Inline status change via dropdown
+- Total count / pending count stats
 
 ## Backend (FastAPI)
 
 ### Routes in `backend/app/routes/explore.py`
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/explore/listings?search=&category=&condition=&max_price=` | Proxies to B-Stock search API, returns JSON array |
-| POST | `/explore/requests` | Create a sourcing request (JWT auth required) |
-| GET | `/explore/requests` | List user's requests (JWT auth) |
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/explore/listings` | None | Proxy to B-Stock search API |
+| POST | `/explore/requests` | JWT required | Create sourcing request |
+| GET | `/explore/requests` | JWT required | List user's own requests |
+| GET | `/admin/explore/requests` | JWT + admin | List all requests (with status filter) |
+| PATCH | `/admin/explore/requests/{id}/status` | JWT + admin | Update request status |
 
-### Data flow for `/explore/listings`
-1. Receive query params
-2. Send `httpx` GET to `search.bstock.com` with appropriate params
-3. Normalize B-Stock response into a consistent format
-4. Return JSON array of listings
+### GET /explore/listings data flow
+1. Receive `search` (optional), `max_results` (default 50, max 200)
+2. Send `httpx` GET to `https://search.bstock.com/v1/all-listings/listings` with `limit=100`, no auth headers
+3. Filter results: keep only `Electronics` category listings, then apply `search` keyword filter on title + storefront name
+4. Normalize each listing into consistent format (map B-Stock field names)
+5. Return `{ listings: [...], total: len(filtered) }`
 
-Error handling: If B-Stock is unreachable, return a clear error message to the user (not a crash).
+### Error handling
+- If B-Stock is unreachable: return `{ error: "Unable to fetch live listings. Please try again.", listings: [] }` with HTTP 200 (graceful degradation)
+- Slow responses: set `httpx` timeout to 10s
+- Invalid params: return 422 with clear message
+
+### Rate limiting
+- `/explore/listings`: 10 requests per minute per IP (SlowAPI decorator)
+- `/explore/requests` POST: 5 per minute per user
 
 ## Security
 
-- Rate limit `/explore/listings` (10 req/min per user) to avoid hammering B-Stock
-- JWT auth on `/explore/requests` (POST and GET)
+- Rate limiting on all endpoints
+- JWT auth on all `/explore/requests` and `/admin/explore/requests` routes
+- `user_id` forced from JWT on POST — cannot be spoofed
 - RLS on `sourcing_requests` table
-- `service_role` key only for creating requests; user reads via anon key + RLS
+- Admin routes check `role = 'admin'` from JWT
+
+## Testing
+
+- `pytest` for FastAPI endpoints:
+  - GET /explore/listings returns valid shape
+  - POST /explore/requests rejects unauthenticated
+  - POST /explore/requests creates record
+  - Admin routes reject non-admin
+  - B-Stock unreachable returns graceful error
+- Manual: full flow browse → request → admin dashboard check
 
 ## Implementation Order
 
-1. Reverse-engineer `search.bstock.com` API endpoint (inspect `bstock.com/all-auctions/` network tab)
-2. Create FastAPI route `GET /explore/listings` as proxy
-3. Create Supabase migration for `sourcing_requests` table + RLS
-4. Create FastAPI routes for `POST/GET /explore/requests`
-5. Build Explore page (server shell + client listing grid + skeleton loading)
-6. Build ExploreCard component
-7. Build "Request Lot" flow (form → POST → confirmation)
-8. Add sourcing requests section to admin dashboard
-9. Test full flow end-to-end
+1. Database: migration for `sourcing_requests` + RLS policies
+2. Backend: FastAPI `explore.py` routes (all 5 endpoints)
+3. Frontend: ExploreCard component
+4. Frontend: Explore page (server shell + client component)
+5. Frontend: Request Lot modal
+6. Frontend: Navbar link
+7. Frontend: Admin dashboard sourcing section
+8. Test full flow end-to-end
