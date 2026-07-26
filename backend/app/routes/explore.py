@@ -1,7 +1,7 @@
 import logging
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -23,26 +23,15 @@ from app.utils.security import check_role, get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["explore"])
+limiter = Limiter(key_func=get_remote_address)
 
 BSTOCK_API = "https://search.bstock.com/v1/all-listings/listings"
-HARDWARE_KEYWORDS = [
-    "computer", "laptop", "desktop", "monitor", "server",
-    "hard drive", "ssd", "ram", "motherboard", "cpu",
-    "graphics card", "gpu", "networking", "router", "switch",
-    "peripheral", "keyboard", "mouse", "tablet", "ipad",
-    "macbook", "thinkpad", "chromebook", "workstation",
-    "notebook", "all-in-one", "apple", "microsoft surface",
-    "access point", "firewall", "nas", "raid", "docking",
-]
-TARGET_CATEGORIES = {"Electronics", "Cell Phones", "Office Supplies & Equipment"}
+TARGET_CATEGORIES = {"electronics", "cell phones", "office supplies & equipment", "small appliances", "mixed lots"}
 
 
-def _is_hardware_listing(listing: dict) -> bool:
-    title = (listing.get("title") or "").lower()
+def _in_target_category(listing: dict) -> bool:
     categories = [c.lower() for c in (listing.get("categories") or [])]
-    cat_match = any(c in TARGET_CATEGORIES for c in categories)
-    kw_match = any(kw in title for kw in HARDWARE_KEYWORDS)
-    return cat_match or kw_match
+    return any(c in TARGET_CATEGORIES for c in categories)
 
 
 def _normalize(listing: dict) -> ListingOut:
@@ -66,32 +55,27 @@ def _normalize(listing: dict) -> ListingOut:
 
 
 @router.get("/explore/listings", response_model=ListingsResponse)
+@limiter.limit("10/minute")
 async def get_listings(
+    request: Request,
     search: str = Query("", max_length=200),
     max_results: int = Query(50, ge=1, le=200),
 ):
+    params = {"sortBy": "endTime", "sortOrder": "asc", "offset": 0, "limit": 100}
+    if search:
+        params["q"] = search
+
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(
-                BSTOCK_API,
-                params={"sortBy": "endTime", "sortOrder": "asc", "offset": 0, "limit": 100},
-            )
+            resp = await client.get(BSTOCK_API, params=params)
             resp.raise_for_status()
             data = resp.json()
     except Exception as e:
         logger.warning("B-Stock API unreachable: %s", e)
-        return ListingsResponse(listings=[], total=0)
+        return ListingsResponse(listings=[], total=0, error="Unable to fetch live listings from B-Stock. Please try again later.")
 
     raw = data.get("listings", [])
-    filtered = [l for l in raw if _is_hardware_listing(l)]
-
-    if search:
-        q = search.lower()
-        filtered = [
-            l for l in filtered
-            if q in (l.get("title") or "").lower()
-            or q in (l.get("storefrontName") or "").lower()
-        ]
+    filtered = [l for l in raw if _in_target_category(l)]
 
     filtered.sort(key=lambda l: l.get("endTime") or "")
     listings = [_normalize(l) for l in filtered[:max_results]]
@@ -100,11 +84,17 @@ async def get_listings(
 
 
 @router.post("/explore/requests", status_code=201)
+@limiter.limit("5/minute")
 async def create_sourcing_request(
+    request: Request,
     body: SourcingRequestCreate,
     user: dict = Depends(get_current_user),
 ):
-    record = create_request({"user_id": user["sub"], **body.model_dump()})
+    record = create_request({
+        "user_id": user["sub"],
+        "user_email": user.get("email", ""),
+        **body.model_dump(),
+    })
     return {"id": record["id"]}
 
 

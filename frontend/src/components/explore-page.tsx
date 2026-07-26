@@ -1,11 +1,10 @@
 "use client"
 
-import { useEffect, useState, useCallback, useMemo } from "react"
-import { RefreshCcw } from "lucide-react"
+import { useEffect, useState, useCallback, useRef } from "react"
+import { ExternalLink, ImageOff, RefreshCcw, Search, X } from "lucide-react"
 import { toast } from "sonner"
 import { useRouter } from "next/navigation"
 import { ExploreCard } from "@/components/explore-card"
-import { SearchBar } from "@/components/search-bar"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -68,12 +67,16 @@ export function ExplorePage() {
   const [listings, setListings] = useState<ExploreListing[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [search, setSearch] = useState("")
+  const [inputValue, setInputValue] = useState("")
+  const [lastSearch, setLastSearch] = useState<string | null>(null)
   const [user, setUser] = useState<{ id: string } | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
+  const [detailListing, setDetailListing] = useState<ExploreListing | null>(null)
   const [requestModal, setRequestModal] = useState<ExploreListing | null>(null)
   const [requestQty, setRequestQty] = useState(1)
   const [requestNotes, setRequestNotes] = useState("")
+  const [requestPhone, setRequestPhone] = useState("")
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
@@ -83,13 +86,15 @@ export function ExplorePage() {
     })
   }, [])
 
-  const fetchListings = useCallback(async () => {
+  const fetchListings = useCallback(async (query: string) => {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`${API_URL}/explore/listings?max_results=200`)
+      const params = query ? `?search=${encodeURIComponent(query)}&max_results=200` : "?max_results=200"
+      const res = await fetch(`${API_URL}/explore/listings${params}`)
       const data = await res.json()
       if (!res.ok) throw new Error(data.detail || "Failed to fetch")
+      if (data.error) throw new Error(data.error)
       setListings(data.listings || [])
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load listings")
@@ -98,20 +103,28 @@ export function ExplorePage() {
     }
   }, [])
 
-  useEffect(() => { fetchListings() }, [fetchListings])
+  useEffect(() => { fetchListings("") }, [fetchListings])
 
-  const filtered = useMemo(
-    () => {
-      if (!search) return listings
-      const q = search.toLowerCase()
-      return listings.filter(
-        (l) =>
-          l.title.toLowerCase().includes(q) ||
-          (l.source_retailer && l.source_retailer.toLowerCase().includes(q))
-      )
-    },
-    [listings, search]
-  )
+  const handleSearch = useCallback((e: React.FormEvent) => {
+    e.preventDefault()
+    setLastSearch(inputValue)
+    fetchListings(inputValue)
+  }, [inputValue, fetchListings])
+
+  const handleClear = useCallback(() => {
+    setInputValue("")
+    setLastSearch(null)
+    fetchListings("")
+    inputRef.current?.focus()
+  }, [fetchListings])
+
+  const handleRefresh = useCallback(() => {
+    fetchListings(lastSearch || "")
+  }, [lastSearch, fetchListings])
+
+  const handleDetail = useCallback((listing: ExploreListing) => {
+    setDetailListing(listing)
+  }, [])
 
   const handleRequest = (listing: ExploreListing) => {
     if (!user) {
@@ -121,6 +134,7 @@ export function ExplorePage() {
     setRequestModal(listing)
     setRequestQty(1)
     setRequestNotes("")
+    setRequestPhone("")
   }
 
   const submitRequest = async () => {
@@ -151,6 +165,7 @@ export function ExplorePage() {
           location: requestModal.location,
           quantity_requested: requestQty,
           notes: requestNotes,
+          phone: requestPhone,
         }),
       })
       if (!res.ok) {
@@ -174,31 +189,54 @@ export function ExplorePage() {
             Explore B-Stock Listings
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Live computer hardware liquidation auctions from Amazon, Walmart, Target &amp; more
+            Live liquidation auctions across electronics, cell phones, office equipment &amp; mixed lots from Amazon, Walmart, Target &amp; more
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="w-64">
-            <SearchBar onSearch={setSearch} />
+        <form onSubmit={handleSearch} className="flex items-center gap-3">
+          <div className="relative w-64">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              ref={inputRef}
+              type="text"
+              autoComplete="off"
+              placeholder="Search by brand, model, or keyword..."
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              className="pl-9 pr-8"
+            />
+            {inputValue && (
+              <button
+                type="button"
+                onClick={handleClear}
+                aria-label="Clear search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
           </div>
+          <Button type="submit" disabled={loading || !inputValue.trim()}>
+            Search
+          </Button>
           <Button
             variant="outline"
             size="icon"
+            type="button"
             className="border-border text-muted-foreground shrink-0"
-            onClick={fetchListings}
+            onClick={handleRefresh}
             disabled={loading}
             aria-label="Refresh listings"
           >
             <RefreshCcw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
           </Button>
-        </div>
+        </form>
       </div>
 
       {error && (
         <div className="mb-6 border border-destructive bg-destructive/10 p-3 text-center text-sm text-destructive" role="alert">
           {error}
           <button
-            onClick={fetchListings}
+            onClick={handleRefresh}
             className="ml-2 underline hover:no-underline"
           >
             Try again
@@ -208,19 +246,22 @@ export function ExplorePage() {
 
       {loading ? (
         <SkeletonGrid />
-      ) : filtered.length === 0 ? (
+      ) : listings.length === 0 ? (
         <div className="py-20 text-center">
           <p className="text-muted-foreground">
-            {search ? "No listings match your search." : "No computer hardware listings available right now."}
+            {lastSearch
+              ? `No listings matching "${lastSearch}". Try a different search.`
+              : "No computer hardware listings available right now."}
           </p>
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {filtered.map((listing) => (
+          {listings.map((listing) => (
             <ExploreCard
               key={listing.lot_id}
               listing={listing}
               onRequest={handleRequest}
+              onDetail={handleDetail}
               isAuthenticated={!!user}
             />
           ))}
@@ -257,6 +298,16 @@ export function ExplorePage() {
                 />
               </div>
               <div className="space-y-2">
+                <Label htmlFor="phone">Phone (optional)</Label>
+                <Input
+                  id="phone"
+                  type="tel"
+                  placeholder="For WhatsApp contact"
+                  value={requestPhone}
+                  onChange={(e) => setRequestPhone(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
                 <Label htmlFor="notes">Notes (optional)</Label>
                 <Textarea
                   id="notes"
@@ -273,6 +324,121 @@ export function ExplorePage() {
               >
                 {submitting ? "Submitting..." : "Submit Request"}
               </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!detailListing} onOpenChange={(open) => !open && setDetailListing(null)}>
+        <DialogContent className="max-w-3xl p-0 gap-0 overflow-hidden">
+          {detailListing && (
+            <div className="flex flex-col md:flex-row max-h-[80vh]">
+              <div className="relative aspect-[4/3] md:aspect-auto md:w-1/2 md:min-h-[400px] bg-muted">
+                {detailListing.image_url ? (
+                  <img
+                    src={detailListing.image_url}
+                    alt={detailListing.title}
+                    className="h-full w-full object-contain"
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center">
+                    <ImageOff className="h-12 w-12 text-muted-foreground" />
+                  </div>
+                )}
+                <span className="absolute left-3 top-3 bg-accent px-2 py-0.5 font-mono text-xs font-bold text-accent-foreground">
+                  LIVE
+                </span>
+                {detailListing.condition && (
+                  <span className="absolute right-3 top-3 bg-black/60 px-2 py-0.5 font-mono text-xs text-white">
+                    {detailListing.condition}
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-col p-5 md:w-1/2 overflow-y-auto">
+                <h2 className="font-display text-base font-semibold text-foreground leading-snug">
+                  {detailListing.title}
+                </h2>
+                {detailListing.source_retailer && (
+                  <p className="mt-1 text-sm text-muted-foreground">{detailListing.source_retailer}</p>
+                )}
+
+                <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Current Bid</p>
+                    <p className="font-mono font-medium text-foreground">
+                      {detailListing.current_bid != null
+                        ? currencyFormat.format(detailListing.current_bid)
+                        : "\u2014"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">MSRP</p>
+                    <p className="font-mono text-muted-foreground">
+                      {detailListing.msrp != null
+                        ? currencyFormat.format(detailListing.msrp)
+                        : "\u2014"}
+                    </p>
+                  </div>
+                  {detailListing.current_bid && detailListing.msrp && (
+                    <div className="col-span-2">
+                      <div className="inline-flex items-center gap-1.5 rounded-sm bg-muted px-2 py-1">
+                        <span className="font-mono text-xs font-medium text-accent">
+                          {((detailListing.current_bid / detailListing.msrp) * 100).toFixed(1)}% of MSRP
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-xs text-muted-foreground">Pallets</p>
+                    <p className="font-mono text-foreground">{detailListing.pallet_count ?? "\u2014"}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Units</p>
+                    <p className="font-mono text-foreground">{detailListing.unit_count ?? "\u2014"}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Location</p>
+                    <p className="text-foreground">{detailListing.location || "\u2014"}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Bids</p>
+                    <p className="font-mono text-foreground">{detailListing.number_of_bids ?? "\u2014"}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Inventory</p>
+                    <p className="text-foreground">{detailListing.inventory_type || "\u2014"}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Closing</p>
+                    <p className="font-mono text-foreground">
+                      {detailListing.close_time
+                        ? new Date(detailListing.close_time).toLocaleDateString()
+                        : "\u2014"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-auto flex gap-2 pt-5">
+                  <button
+                    onClick={() => {
+                      setDetailListing(null)
+                      handleRequest(detailListing)
+                    }}
+                    className="flex min-h-[44px] flex-1 items-center justify-center bg-accent px-4 text-sm font-semibold text-accent-foreground transition-colors hover:bg-accent/90"
+                  >
+                    {user ? "Request Lot" : "Sign In to Request"}
+                  </button>
+                  <a
+                    href={detailListing.auction_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex min-h-[44px] w-11 items-center justify-center border border-border text-muted-foreground transition-colors hover:bg-muted"
+                    aria-label="View on B-Stock"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                  </a>
+                </div>
+              </div>
             </div>
           )}
         </DialogContent>

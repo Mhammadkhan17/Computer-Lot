@@ -1,6 +1,8 @@
 CREATE TABLE public.sourcing_requests (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    user_email TEXT,
+    phone TEXT,
     listing_url TEXT NOT NULL,
     title TEXT NOT NULL,
     current_bid NUMERIC(10,2),

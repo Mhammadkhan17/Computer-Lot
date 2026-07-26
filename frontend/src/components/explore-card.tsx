@@ -30,10 +30,11 @@ interface ExploreListing {
 interface ExploreCardProps {
   listing: ExploreListing
   onRequest: (listing: ExploreListing) => void
+  onDetail: (listing: ExploreListing) => void
   isAuthenticated: boolean
 }
 
-export function ExploreCard({ listing, onRequest, isAuthenticated }: ExploreCardProps) {
+export function ExploreCard({ listing, onRequest, onDetail, isAuthenticated }: ExploreCardProps) {
   const [imgError, setImgError] = useState(false)
 
   const timeLeft = listing.close_time
@@ -45,7 +46,7 @@ export function ExploreCard({ listing, onRequest, isAuthenticated }: ExploreCard
     : null
 
   return (
-    <Card className="flex flex-col overflow-hidden border-border bg-card shadow-none">
+    <Card className="flex flex-col overflow-hidden border-border bg-card shadow-none cursor-pointer" onClick={() => onDetail(listing)}>
       <div className="relative aspect-[4/3] overflow-hidden bg-muted">
         {listing.image_url && !imgError ? (
           <img
@@ -135,7 +136,7 @@ export function ExploreCard({ listing, onRequest, isAuthenticated }: ExploreCard
 
       <CardFooter className="flex gap-2 p-3 pt-0">
         <button
-          onClick={() => onRequest(listing)}
+          onClick={(e) => { e.stopPropagation(); onRequest(listing) }}
           className="flex min-h-[44px] flex-1 items-center justify-center gap-2 bg-accent px-4 py-2.5 text-sm font-semibold text-accent-foreground transition-colors hover:bg-accent/90"
         >
           {isAuthenticated ? "Request Lot" : "Sign In to Request"}
@@ -144,6 +145,7 @@ export function ExploreCard({ listing, onRequest, isAuthenticated }: ExploreCard
           href={listing.auction_url}
           target="_blank"
           rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
           className="flex min-h-[44px] w-11 items-center justify-center border border-border text-muted-foreground transition-colors hover:bg-muted"
           aria-label="View on B-Stock"
         >

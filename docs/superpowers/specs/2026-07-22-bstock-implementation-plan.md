@@ -9,7 +9,7 @@
    - `sourcing_requests` table with all columns from design doc
    - Enable RLS
    - RLS policies: user SELECT own, admin SELECT all, INSERT authenticated, UPDATE admin only
-2. Apply migration
+2. Apply migration via Supabase MCP
 
 **Files**: `supabase/migrations/002_sourcing_requests.sql`
 **Verification**: Query table via Supabase SQL editor

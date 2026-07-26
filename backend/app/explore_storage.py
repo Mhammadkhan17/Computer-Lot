@@ -2,7 +2,6 @@ import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 DB_PATH = DATA_DIR / "sourcing_requests.json"
@@ -29,6 +28,8 @@ def create_request(data: dict) -> dict:
     record = {
         "id": str(uuid.uuid4()),
         "user_id": data["user_id"],
+        "user_email": data.get("user_email"),
+        "phone": data.get("phone") or None,
         "listing_url": data["listing_url"],
         "title": data["title"],
         "current_bid": float(data["current_bid"]) if data.get("current_bid") else None,

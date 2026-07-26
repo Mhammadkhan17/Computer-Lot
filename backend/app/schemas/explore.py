@@ -32,6 +32,7 @@ class SourcingRequestCreate(BaseModel):
     location: str | None = None
     quantity_requested: int = Field(default=1, ge=1)
     notes: str = ""
+    phone: str = ""
 
 
 class SourcingRequestOut(BaseModel):
@@ -50,6 +51,8 @@ class SourcingRequestOut(BaseModel):
     status: str
     created_at: str
     user_id: str | None = None
+    user_email: str | None = None
+    phone: str | None = None
 
 
 class StatusUpdate(BaseModel):
@@ -59,3 +62,4 @@ class StatusUpdate(BaseModel):
 class ListingsResponse(BaseModel):
     listings: list[ListingOut]
     total: int
+    error: str | None = None

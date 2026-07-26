@@ -23,7 +23,7 @@ B-Stock (`bstock.com`) is the largest B2B liquidation marketplace network. They 
 `auctionUrl`, `title`, `winningBidAmount`, `retailPrice`, `unitCount`, `palletCount`, `condition`, `displayedCondition`, `storefrontName`, `region`, `endTime`, `primaryImageUrl`, `currency`, `numberOfBids`, `categories`, `inventoryType`
 
 ### Filtering strategy
-B-Stock API supports `category` filter. We include results from `Electronics`, `Cell Phones`, `Major Appliances` categories. Then server-side post-filter to keep only listings whose title contains keywords matching computer hardware: `computer`, `laptop`, `desktop`, `monitor`, `server`, `hard drive`, `ssd`, `ram`, `motherboard`, `cpu`, `graphics card`, `gpu`, `networking`, `router`, `switch`, `peripheral`, `keyboard`, `mouse`, `tablet`, `ipad`, `macbook`, `thinkpad`, `chromebook`, `workstation`, as well as common brand names for computer hardware.
+B-Stock API supports `category` filter. We include results from `Electronics` and `Cell Phones` categories. Then server-side post-filter to keep only listings whose title contains keywords matching computer hardware: `computer`, `laptop`, `desktop`, `monitor`, `server`, `hard drive`, `ssd`, `ram`, `motherboard`, `cpu`, `graphics card`, `gpu`, `networking`, `router`, `switch`, `peripheral`, `keyboard`, `mouse`, `tablet`, `ipad`, `macbook`, `thinkpad`, `chromebook`, `workstation`, `notebook`, `all-in-one`, `apple`, `microsoft surface`, `access point`, `firewall`, `nas`, `raid`, `docking`.
 
 ## Architecture
 
@@ -63,6 +63,8 @@ Admin:
 |--------|------|-------|
 | `id` | UUID PK | `gen_random_uuid()` |
 | `user_id` | UUID FK → `auth.users` | who requested |
+| `user_email` | TEXT | from JWT at request time |
+| `phone` | TEXT | optional contact phone for WhatsApp |
 | `listing_url` | TEXT | B-Stock lot URL |
 | `title` | TEXT | lot title |
 | `current_bid` | NUMERIC(10,2) | price at time of request |
@@ -144,7 +146,7 @@ Admin:
 
 ### Rate limiting
 - `/explore/listings`: 10 requests per minute per IP (SlowAPI decorator)
-- `/explore/requests` POST: 5 per minute per user
+- `/explore/requests` POST: 5 per minute per IP
 
 ## Security
 
