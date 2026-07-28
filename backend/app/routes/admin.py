@@ -3,12 +3,11 @@ import io
 import logging
 from urllib.parse import quote
 
-import psycopg2
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
 from supabase import Client
 
-from app.config import settings
+from app.adapters.db import get_raw_connection
 from app.database import get_supabase
 from app.schemas.admin import AdminActionResponse
 from app.schemas.order import OrderStatusUpdate
@@ -18,16 +17,6 @@ from app.utils.ws_manager import get_manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["admin"])
-
-
-def _get_db_connection() -> psycopg2.extensions.connection:
-    return psycopg2.connect(
-        dbname=settings.supabase_db_name,
-        user=settings.supabase_db_user,
-        password=settings.supabase_db_password,
-        host=settings.supabase_db_host,
-        port=settings.supabase_db_port,
-    )
 
 
 def _assert_admin(user: dict, supabase: Client) -> None:
@@ -91,7 +80,7 @@ async def update_order_status(
             detail=f"Invalid status. Must be one of: {', '.join(sorted(valid_statuses))}",
         )
 
-    conn = _get_db_connection()
+    conn = get_raw_connection()
     try:
         if body.status == "cancelled":
             order_resp = supabase.table("order_items").select("product_id, quantity_ordered").eq("order_id", order_id).execute()

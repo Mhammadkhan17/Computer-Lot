@@ -1,25 +1,14 @@
 import logging
 
-import psycopg2
 from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
 
-
-def _get_db_connection():
-    from app.config import settings
-
-    return psycopg2.connect(
-        dbname=settings.supabase_db_name,
-        user=settings.supabase_db_user,
-        password=settings.supabase_db_password,
-        host=settings.supabase_db_host,
-        port=settings.supabase_db_port,
-    )
+from app.adapters.db import get_raw_connection
 
 
 def run_in_transaction(order_data, items):
-    conn = _get_db_connection()
+    conn = get_raw_connection()
     try:
         cur = conn.cursor()
         cur.execute(

@@ -113,7 +113,7 @@ class TestAdminReject:
 
 
 class TestAdminOrderStatus:
-    @patch("app.routes.admin._get_db_connection")
+    @patch("app.adapters.db.get_raw_connection")
     def test_update_order_status(self, mock_get_db):
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
@@ -130,7 +130,7 @@ class TestAdminOrderStatus:
         data = resp.json()
         assert data["status"] == "updated"
 
-    @patch("app.routes.admin._get_db_connection")
+    @patch("app.adapters.db.get_raw_connection")
     def test_cancel_order_restocks_items(self, mock_get_db):
         mock_conn = MagicMock()
         mock_cursor = MagicMock()

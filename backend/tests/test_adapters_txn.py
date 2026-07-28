@@ -20,7 +20,7 @@ def test_successful_transaction_commits():
     ]
     mock_conn.cursor.return_value = mock_cursor
 
-    with patch("app.adapters.txn._get_db_connection", return_value=mock_conn):
+    with patch("app.adapters.db.get_raw_connection", return_value=mock_conn):
         from app.adapters.txn import run_in_transaction
 
         order_data = {"user_id": "u1", "customer_name": "Alice", "customer_phone": "+123", "total_amount": 100.0}
@@ -42,7 +42,7 @@ def test_failed_stock_decrement_rolls_back():
     ]
     mock_conn.cursor.return_value = mock_cursor
 
-    with patch("app.adapters.txn._get_db_connection", return_value=mock_conn):
+    with patch("app.adapters.db.get_raw_connection", return_value=mock_conn):
         from app.adapters.txn import run_in_transaction
 
         order_data = {"user_id": "u1", "customer_name": "Alice", "customer_phone": "+123", "total_amount": 100.0}
@@ -60,7 +60,7 @@ def test_db_error_rolls_back():
     mock_cursor.execute.side_effect = RuntimeError("DB connection lost")
     mock_conn.cursor.return_value = mock_cursor
 
-    with patch("app.adapters.txn._get_db_connection", return_value=mock_conn):
+    with patch("app.adapters.db.get_raw_connection", return_value=mock_conn):
         from app.adapters.txn import run_in_transaction
 
         order_data = {"user_id": "u1", "customer_name": "Alice", "customer_phone": "+123", "total_amount": 100.0}
