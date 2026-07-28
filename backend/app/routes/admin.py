@@ -7,7 +7,11 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
 from supabase import Client
 
+from app.adapters.csv_parser import get_headers, get_template_row, parse_rows
 from app.adapters.db import get_raw_connection
+from app.adapters.product_inserter import insert_products
+from app.adapters.row_normalizer import normalize_row
+from app.adapters.row_validator import validate_row
 from app.database import get_supabase
 from app.schemas.admin import AdminActionResponse
 from app.schemas.order import OrderStatusUpdate
@@ -82,33 +86,32 @@ async def update_order_status(
 
     conn = get_raw_connection()
     try:
+        cur = conn.cursor()
         if body.status == "cancelled":
             order_resp = supabase.table("order_items").select("product_id, quantity_ordered").eq("order_id", order_id).execute()
             items = order_resp.data or []
             if not items:
                 raise HTTPException(status_code=404, detail="Order not found or has no items")
 
-            with conn:
-                with conn.cursor() as cur:
-                    for item in items:
-                        cur.callproc("increment_stock_inventory", (item["product_id"], item["quantity_ordered"]))
+            for item in items:
+                cur.callproc("increment_stock_inventory", (item["product_id"], item["quantity_ordered"]))
 
-        with conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE orders SET status = %s WHERE id = %s RETURNING id, user_id, readable_order_id",
-                    (body.status, order_id),
-                )
-                row = cur.fetchone()
-                if not row:
-                    raise HTTPException(status_code=404, detail="Order not found")
+        cur.execute(
+            "UPDATE orders SET status = %s WHERE id = %s RETURNING id, user_id, readable_order_id",
+            (body.status, order_id),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Order not found")
 
-                order_user_id = row[1]
-                readable_order_id = row[2]
+        order_user_id = row[1]
+        readable_order_id = row[2]
+        conn.commit()
     except HTTPException:
         raise
     except Exception as e:
         logger.error("Order status update failed: %s", e)
+        conn.rollback()
         raise HTTPException(status_code=500, detail="Order update failed")
     finally:
         conn.close()
@@ -137,30 +140,6 @@ async def update_order_status(
     return AdminActionResponse(status="updated")
 
 
-VALID_GRADES = {"Grade_A", "Grade_B", "Grade_C", "For_Parts"}
-
-CSV_HEADERS = [
-    "title", "sku", "description", "grade", "items_per_lot",
-    "retail_price_per_lot", "wholesale_price_per_lot", "minimum_wholesale_lots",
-    "available_stock_lots", "image_urls", "tags", "hardware_specifications",
-]
-
-TEMPLATE_ROW = {
-    "title": "Example Product",
-    "sku": "EX-001",
-    "description": "A sample product description",
-    "grade": "Grade_A",
-    "items_per_lot": "1",
-    "retail_price_per_lot": "199.99",
-    "wholesale_price_per_lot": "149.99",
-    "minimum_wholesale_lots": "5",
-    "available_stock_lots": "20",
-    "image_urls": "https://example.com/img1.jpg, https://example.com/img2.jpg",
-    "tags": "example, sample, demo",
-    "hardware_specifications": '{"key": "value"}',
-}
-
-
 @router.get("/products/template")
 async def download_template(
     user: dict = Depends(get_current_user),
@@ -169,9 +148,9 @@ async def download_template(
     _assert_admin(user, supabase)
 
     output = io.StringIO()
-    writer = csv.DictWriter(output, fieldnames=CSV_HEADERS)
+    writer = csv.DictWriter(output, fieldnames=get_headers())
     writer.writeheader()
-    writer.writerow(TEMPLATE_ROW)
+    writer.writerow(get_template_row())
     output.seek(0)
 
     return StreamingResponse(
@@ -193,39 +172,32 @@ async def import_products(
     if not content or not content.strip():
         raise HTTPException(status_code=400, detail="File is empty")
 
-    text = content.decode("utf-8-sig")
-    reader = csv.DictReader(io.StringIO(text))
-
-    all_rows: list[dict] = list(reader)
+    all_rows = parse_rows(content)
     total_rows = len(all_rows)
 
     errors: list[RowImportError] = []
-    rows: list[dict] = []
+    valid_rows: list[dict] = []
 
     for row_idx, row in enumerate(all_rows, start=2):
-        row_errors = _validate_row(row)
+        validated, row_errors = validate_row(row)
         if row_errors:
             sku = row.get("sku", "").strip() or ""
             errors.append(RowImportError(row=row_idx, sku=sku, reason="; ".join(row_errors)))
             continue
 
-        rows.append(_normalize_row(row))
+        normalized = normalize_row(validated)
+        valid_rows.append(normalized)
 
     if errors:
         return ProductImportResponse(inserted=0, errors=errors, total_rows=total_rows)
 
-    for row in rows:
-        try:
-            supabase.table("products").insert(row).execute()
-        except Exception as e:
-            sku = row.get("sku", "") or ""
-            errors.append(RowImportError(row=0, sku=sku, reason=str(e)))
-
-    if errors:
-        return ProductImportResponse(inserted=len(rows) - len(errors), errors=errors, total_rows=total_rows)
+    inserted = insert_products(supabase, valid_rows)
+    insertion_errors = total_rows - inserted
+    if insertion_errors > 0:
+        errors.append(RowImportError(row=0, sku="", reason=f"{insertion_errors} rows failed to insert"))
 
     await get_manager().broadcast_to_role("product_update", {}, role="admin")
-    return ProductImportResponse(inserted=len(rows), errors=[], total_rows=total_rows)
+    return ProductImportResponse(inserted=inserted, errors=errors, total_rows=total_rows)
 
 
 @router.post("/products/broadcast-update")
@@ -236,69 +208,3 @@ async def broadcast_product_update(
     _assert_admin(user, supabase)
     await get_manager().broadcast_to_role("product_update", {}, role="admin")
     return {"status": "ok"}
-
-
-def _validate_row(row: dict) -> list[str]:
-    errs: list[str] = []
-
-    if not row.get("title", "").strip():
-        errs.append("Missing title")
-
-    if not row.get("sku", "").strip():
-        errs.append("Missing SKU")
-
-    grade = row.get("grade", "").strip()
-    if grade and grade not in VALID_GRADES:
-        errs.append(f"Invalid grade '{grade}'")
-
-    try:
-        retail = float(row.get("retail_price_per_lot", ""))
-        if retail <= 0:
-            errs.append("Retail price must be > 0")
-    except (ValueError, TypeError):
-        errs.append("Missing or invalid retail price")
-
-    try:
-        wholesale = float(row.get("wholesale_price_per_lot", ""))
-        if wholesale <= 0:
-            errs.append("Wholesale price must be > 0")
-    except (ValueError, TypeError):
-        errs.append("Missing or invalid wholesale price")
-
-    try:
-        stock = int(row.get("available_stock_lots", "0"))
-        if stock < 0:
-            errs.append("Stock must be >= 0")
-    except (ValueError, TypeError):
-        errs.append("Missing or invalid stock count")
-
-    return errs
-
-
-def _normalize_row(row: dict) -> dict:
-    images = [s.strip() for s in row.get("image_urls", "").split(",") if s.strip()] if row.get("image_urls", "").strip() else None
-    tags = [s.strip() for s in row.get("tags", "").split(",") if s.strip()] if row.get("tags", "").strip() else None
-
-    specs = {}
-    raw_specs = row.get("hardware_specifications", "").strip()
-    if raw_specs:
-        try:
-            import json
-            specs = json.loads(raw_specs)
-        except json.JSONDecodeError:
-            pass
-
-    return {
-        "title": row["title"].strip(),
-        "sku": row["sku"].strip(),
-        "description": row.get("description", "").strip() or None,
-        "grade": row.get("grade", "").strip() or "Grade_A",
-        "items_per_lot": int(row.get("items_per_lot", "1").strip() or "1"),
-        "retail_price_per_lot": float(row["retail_price_per_lot"]),
-        "wholesale_price_per_lot": float(row["wholesale_price_per_lot"]),
-        "minimum_wholesale_lots": int(row.get("minimum_wholesale_lots", "5").strip() or "5"),
-        "available_stock_lots": int(row["available_stock_lots"]),
-        "images": images,
-        "tags": tags,
-        "hardware_specifications": specs,
-    }

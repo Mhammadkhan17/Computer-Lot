@@ -118,7 +118,7 @@ class TestAdminOrderStatus:
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_cursor.fetchone.return_value = ("order-789", "retail-user", 42)
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_conn.cursor.return_value = mock_cursor
         mock_get_db.return_value = mock_conn
 
         resp = TestClient(app).patch(
@@ -135,7 +135,7 @@ class TestAdminOrderStatus:
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_cursor.fetchone.return_value = ("order-789", "retail-user", 42)
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_conn.cursor.return_value = mock_cursor
         mock_get_db.return_value = mock_conn
 
         resp = TestClient(app).patch(
