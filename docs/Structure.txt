@@ -59,9 +59,16 @@ computer-lot-liquidation/
 │   │   ├── schemas/
 │   │   │   ├── __init__.py
 │   │   │   └── order.py                      # Pydantic models
+│   │   ├── adapters/
+│   │   │   ├── __init__.py
+│   │   │   ├── pricing.py                    # Pricing adapter (ADR-001)
+│   │   │   ├── stock.py                      # Stock availability adapter
+│   │   │   ├── txn.py                        # Transaction adapter (ADR-002)
+│   │   │   ├── whatsapp.py                   # WhatsApp deep link adapter
+│   │   │   └── notification.py               # WebSocket broadcast adapter
 │   │   ├── routes/
 │   │   │   ├── __init__.py
-│   │   │   └── checkout.py                   # Enhanced checkout endpoint
+│   │   │   └── checkout.py                   # Thin checkout orchestrator
 │   │   ├── models/                           # Optional Pydantic DB models
 │   │   │   └── __init__.py
 │   │   └── utils/

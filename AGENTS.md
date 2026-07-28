@@ -65,7 +65,7 @@ See `docs/glossary.md` for project terminology.
 Never deviate from the structure defined in `Structure.txt`. When creating new files:
 
 - Frontend: `frontend/src/app/` for routes, `components/`, `hooks/`, `lib/`, `types/`
-- Backend: `backend/app/routes/`, `schemas/`, `utils/`
+- Backend: `backend/app/routes/`, `schemas/`, `utils/`, `adapters/`
 - Supabase: `supabase/migrations/` and `supabase/policies.sql`
 
 **Forbidden**:
