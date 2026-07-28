@@ -4,6 +4,7 @@ import Link from "next/link"
 import { Minus, Plus, ShoppingCart, Trash2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useCart } from "@/hooks/useCart"
+import { usePricing } from "@/hooks/usePricing"
 
 const currencyFormat = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -12,14 +13,14 @@ const currencyFormat = new Intl.NumberFormat("en-US", {
 
 export function CartDrawer() {
   const { items, removeItem, updateQuantity, clearCart, totalLots, subtotal, cartOpen, setCartOpen } = useCart()
+  const { resolvePrice } = usePricing()
 
   const isOpen = cartOpen
 
   const close = () => setCartOpen(false)
 
   const totalLotsCount = totalLots()
-  const isWholesale = totalLotsCount >= 10
-  const cartSubtotal = subtotal(isWholesale)
+  const cartSubtotal = subtotal(totalLotsCount >= 10)
 
   if (!isOpen) return null
 
@@ -40,7 +41,7 @@ export function CartDrawer() {
           </Button>
         </div>
 
-        {isWholesale && items.length > 0 && (
+        {totalLotsCount >= 10 && items.length > 0 && (
           <div className="border-b border-border bg-inventory-100 px-4 py-2 font-mono text-xs font-medium text-inventory-600">
             WHOLESALE PRICING APPLIED &mdash; &ge;10 LOTS
           </div>
@@ -58,10 +59,7 @@ export function CartDrawer() {
           )}
 
           {items.map((item) => {
-            const itemWholesale = isWholesale && item.quantity >= item.product.minimum_wholesale_lots
-            const price = itemWholesale
-              ? Number(item.product.wholesale_price_per_lot)
-              : Number(item.product.retail_price_per_lot)
+            const price = resolvePrice({ product: item.product, quantity: item.quantity, totalLotsCount })
 
             return (
               <div key={item.product.id} className="flex gap-2 border border-border p-3 max-[400px]:flex-col max-[400px]:gap-2">
@@ -70,7 +68,7 @@ export function CartDrawer() {
                     {item.product.title}
                   </p>
                   <p className="font-mono text-xs text-muted-foreground">
-                    {itemWholesale ? "WHOLESALE" : "RETAIL"} &mdash; {currencyFormat.format(price)} / lot
+                    {price === Number(item.product.wholesale_price_per_lot) ? "WHOLESALE" : "RETAIL"} &mdash; {currencyFormat.format(price)} / lot
                   </p>
                   <p className="text-xs text-muted-foreground">
                     Stock: {item.product.available_stock_lots} lots

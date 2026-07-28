@@ -5,6 +5,7 @@ import { ArrowLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { CheckoutButton } from "@/components/checkout-button"
 import { useCart } from "@/hooks/useCart"
+import { usePricing } from "@/hooks/usePricing"
 
 const currencyFormat = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -13,6 +14,7 @@ const currencyFormat = new Intl.NumberFormat("en-US", {
 
 export function CheckoutPage() {
   const { items, totalLots, subtotal } = useCart()
+  const { resolvePrice } = usePricing()
 
   const totalLotsCount = totalLots()
   const isWholesale = totalLotsCount >= 10
@@ -45,11 +47,7 @@ export function CheckoutPage() {
 
       <div className="mb-8 space-y-2">
         {items.map((item) => {
-          const itemWholesale =
-            isWholesale && item.quantity >= item.product.minimum_wholesale_lots
-          const price = itemWholesale
-            ? Number(item.product.wholesale_price_per_lot)
-            : Number(item.product.retail_price_per_lot)
+          const price = resolvePrice({ product: item.product, quantity: item.quantity, totalLotsCount })
 
           return (
             <div
@@ -61,7 +59,7 @@ export function CheckoutPage() {
                   {item.product.title}
                 </p>
                 <p className="font-mono text-xs text-muted-foreground">
-                  {itemWholesale ? "WHOLESALE" : "RETAIL"} &mdash; {currencyFormat.format(price)} / lot
+                  {price === Number(item.product.wholesale_price_per_lot) ? "WHOLESALE" : "RETAIL"} &mdash; {currencyFormat.format(price)} / lot
                 </p>
               </div>
               <div className="text-right shrink-0">
