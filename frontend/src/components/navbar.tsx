@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { ShoppingCart, LayoutDashboard } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -13,16 +13,32 @@ export function Navbar() {
   const setCartOpen = useCart((s) => s.setCartOpen)
   const [user, setUser] = useState<{ id: string; email?: string; role?: string } | null>(null)
   const [mounted, setMounted] = useState(false)
+  const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null)
 
   useEffect(() => {
     setMounted(true)
     const supabase = createClient()
+    supabaseRef.current = supabase
+
     supabase.auth.getUser().then(({ data: { user: authUser } }) => {
       if (authUser) {
         const role = (authUser.app_metadata?.role as string) ?? undefined
         setUser({ id: authUser.id, email: authUser.email, role })
       }
     })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        const role = (session.user.app_metadata?.role as string) ?? undefined
+        setUser({ id: session.user.id, email: session.user.email, role })
+      } else {
+        setUser(null)
+      }
+    })
+
+    return () => {
+      subscription.unsubscribe()
+    }
   }, [])
 
   const isAdmin = user?.role === "admin"
