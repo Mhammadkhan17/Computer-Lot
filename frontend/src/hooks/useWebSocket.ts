@@ -2,42 +2,44 @@
 
 import { useEffect, useRef } from "react"
 import { createClient } from "@/utils/supabase/client"
-import { wsClient } from "@/lib/ws-client"
+import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js"
 
-type WsEvent =
-  | "stock_update"
-  | "order_status_update"
-  | "profile_update"
-  | "product_update"
+type TableEvent = "INSERT" | "UPDATE" | "DELETE" | "*"
 
-export function useWebSocket(event: WsEvent | string, handler: (payload: unknown) => void) {
+interface TableSubscription {
+  table: string
+  event: TableEvent
+}
+
+const subscriptionMap: Record<string, TableSubscription> = {
+  order_status_update: { table: "orders", event: "*" },
+  profile_update: { table: "profiles", event: "*" },
+  product_update: { table: "products", event: "*" },
+  stock_update: { table: "products", event: "UPDATE" },
+}
+
+export function useWebSocket(event: string, handler: (payload: unknown) => void) {
   const handlerRef = useRef(handler)
   handlerRef.current = handler
 
   useEffect(() => {
+    const sub = subscriptionMap[event]
+    if (!sub) return
+
     const supabase = createClient()
-
-    const init = async () => {
-      const { data } = await supabase.auth.getSession()
-      if (data.session?.access_token) {
-        wsClient.connect(data.session.access_token)
-      }
-    }
-    init()
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.access_token) {
-        wsClient.connect(session.access_token)
-      }
-    })
-
-    const unsub = wsClient.on(event, (payload) => handlerRef.current(payload))
+    const channel = supabase
+      .channel(`realtime-${event}`)
+      .on(
+        "postgres_changes",
+        { event: sub.event, schema: "public", table: sub.table },
+        (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
+          handlerRef.current(payload)
+        },
+      )
+      .subscribe()
 
     return () => {
-      unsub()
-      subscription.unsubscribe()
+      supabase.removeChannel(channel)
     }
   }, [event])
 }

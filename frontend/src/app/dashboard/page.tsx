@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation"
 import { createClient } from "@/utils/supabase/server"
+import { loadDashboardData } from "@/lib/dashboard-data"
 import { DashboardContent } from "./dashboard-content"
 
 export default async function DashboardPage() {
@@ -10,10 +11,21 @@ export default async function DashboardPage() {
     redirect("/login")
   }
 
-  const role = (user.app_metadata?.role as string) ?? null
-  if (!role || role !== "admin") {
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single()
+
+  if (profile?.role !== "admin") {
     redirect("/")
   }
 
-  return <DashboardContent />
+  const initialData = await loadDashboardData(supabase).catch(() => ({
+    orders: [],
+    pendingProfiles: [],
+    products: [],
+  }))
+
+  return <DashboardContent initialData={initialData} />
 }

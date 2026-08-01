@@ -59,6 +59,33 @@ export interface OrderItem {
   unit_price_applied: number
 }
 
+export interface AdminOrderItem {
+  id: string
+  product_id: string
+  quantity_ordered: number
+  unit_price_applied: number
+  products: { title: string } | null
+}
+
+export interface AdminOrder {
+  id: string
+  readable_order_id: number
+  customer_name: string
+  total_amount: number
+  status: OrderStatus
+  created_at: string
+  order_items: AdminOrderItem[]
+}
+
+export interface AdminProfile {
+  id: string
+  full_name: string
+  company_name?: string
+  tax_registration_id?: string
+  role: UserRole
+  created_at: string
+}
+
 export interface CheckoutRequest {
   items: { product_id: string; quantity: number }[]
 }
@@ -96,18 +123,3 @@ export interface CsvImportError {
 }
 
 export type ProductCsvColumn = keyof Pick<Product, "title" | "sku" | "description" | "grade" | "items_per_lot" | "retail_price_per_lot" | "wholesale_price_per_lot" | "minimum_wholesale_lots" | "available_stock_lots">
-
-export interface ProductFormData {
-  title: string
-  sku: string
-  description?: string
-  grade: ItemGrade
-  items_per_lot: number
-  retail_price_per_lot: number
-  wholesale_price_per_lot: number
-  minimum_wholesale_lots: number
-  available_stock_lots: number
-  imageUrls: string
-  tags: string
-  hardwareSpecs: string
-}

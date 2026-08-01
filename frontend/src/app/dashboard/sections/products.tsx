@@ -15,8 +15,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { AddProductModal } from "./add-product-modal"
-import { EditProductModal } from "./edit-product-modal"
+import { ProductFormDialog } from "@/components/product-form"
+import { broadcastProductUpdate } from "@/lib/product-events"
 import type { Product } from "@/types"
 
 const currencyFormat = new Intl.NumberFormat("en-US", {
@@ -34,25 +34,12 @@ const gradeVariant: Record<string, "outline" | "secondary" | "default" | "destru
 interface ProductsSectionProps {
   products: Product[]
   loading: boolean
+  onRefresh?: () => void
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
-async function broadcastProductUpdate() {
-  try {
-    const supabase = createClient()
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session?.access_token) return
-    await fetch(`${API_URL}/admin/products/broadcast-update`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${session.access_token}` },
-    })
-  } catch {
-    // best-effort
-  }
-}
-
-export function ProductsSection({ products, loading }: ProductsSectionProps) {
+export function ProductsSection({ products, loading, onRefresh }: ProductsSectionProps) {
   const [search, setSearch] = useState("")
   const [importing, setImporting] = useState(false)
   const [importErrors, setImportErrors] = useState<{ row: number; sku: string; reason: string }[] | null>(null)
@@ -89,7 +76,10 @@ export function ProductsSection({ products, loading }: ProductsSectionProps) {
         toast.error(`Inserted ${result.inserted} product(s) with ${result.errors.length} error(s)`)
       } else {
         toast.success(`Inserted ${result.inserted} product(s)`)
-        window.location.reload()
+        setImportErrors(null)
+        setImportInserted(0)
+        broadcastProductUpdate()
+        onRefresh?.()
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Import failed")
@@ -141,7 +131,7 @@ export function ProductsSection({ products, loading }: ProductsSectionProps) {
       toast.success("Product deleted")
       broadcastProductUpdate()
       setDeleteConfirm(null)
-      window.location.reload()
+      onRefresh?.()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to delete product")
       setDeleteConfirm(null)
@@ -204,12 +194,16 @@ export function ProductsSection({ products, loading }: ProductsSectionProps) {
               <Download className="mr-1 h-4 w-4" />
               Template
             </Button>
-            <AddProductModal onSuccess={() => window.location.reload()}>
-              <Button size="sm" className="bg-accent text-accent-foreground hover:bg-accent/90">
-                <Plus className="mr-1 h-4 w-4" />
-                Add Product
-              </Button>
-            </AddProductModal>
+            <ProductFormDialog
+              mode="create"
+              onSuccess={onRefresh}
+              trigger={
+                <Button size="sm" className="bg-accent text-accent-foreground hover:bg-accent/90">
+                  <Plus className="mr-1 h-4 w-4" />
+                  Add Product
+                </Button>
+              }
+            />
           </div>
         </CardHeader>
         <CardContent className="p-4">
@@ -319,14 +313,19 @@ export function ProductsSection({ products, loading }: ProductsSectionProps) {
                       </td>
                       <td className="py-2">
                         <div className="flex gap-1">
-                            <EditProductModal product={product} onSuccess={() => window.location.reload()}>
-                            <button
-                              className="rounded-sm p-1 max-sm:min-h-[44px] max-sm:min-w-[44px] text-muted-foreground hover:text-foreground hover:bg-accent/10 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                              aria-label={`Edit ${product.title}`}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </button>
-                          </EditProductModal>
+                            <ProductFormDialog
+                              mode="edit"
+                              product={product}
+                              onSuccess={onRefresh}
+                              trigger={
+                                <button
+                                  className="rounded-sm p-1 max-sm:min-h-[44px] max-sm:min-w-[44px] text-muted-foreground hover:text-foreground hover:bg-accent/10 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                                  aria-label={`Edit ${product.title}`}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </button>
+                              }
+                            />
                             <button
                               className="rounded-sm p-1 max-sm:min-h-[44px] max-sm:min-w-[44px] text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                               aria-label={`Delete ${product.title}`}

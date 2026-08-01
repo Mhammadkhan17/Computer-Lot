@@ -23,21 +23,13 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
 import { Bar, BarChart, XAxis, YAxis, CartesianGrid } from "recharts"
+import type { AdminOrder } from "@/types"
 
 interface OverviewProps {
-  orders: OrderOverview[]
+  orders: AdminOrder[]
   pendingApprovalsCount: number
   productCount: number
   loading: boolean
-}
-
-interface OrderOverview {
-  id: string
-  readable_order_id: number
-  customer_name: string
-  total_amount: number
-  status: string
-  created_at: string
 }
 
 const currencyFormat = new Intl.NumberFormat("en-US", {
@@ -59,7 +51,7 @@ const chartConfig = {
   },
 }
 
-function aggregateDailyRevenue(orders: OrderOverview[]) {
+function aggregateDailyRevenue(orders: AdminOrder[]) {
   const daily: Record<string, number> = {}
   orders.forEach((o) => {
     const day = new Date(o.created_at).toLocaleDateString("en-US", {

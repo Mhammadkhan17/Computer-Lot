@@ -9,24 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Search } from "lucide-react"
 import { createClient } from "@/utils/supabase/client"
-
-interface OrderItem {
-  id: string
-  product_id: string
-  quantity_ordered: number
-  unit_price_applied: number
-  products: { title: string } | null
-}
-
-interface Order {
-  id: string
-  readable_order_id: number
-  customer_name: string
-  total_amount: number
-  status: string
-  created_at: string
-  order_items: OrderItem[]
-}
+import type { AdminOrder } from "@/types"
 
 const currencyFormat = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -48,7 +31,7 @@ const nextStatus: Record<string, string> = {
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
 interface OrdersSectionProps {
-  orders: Order[]
+  orders: AdminOrder[]
   loading: boolean
   onStatusChange?: () => void
 }

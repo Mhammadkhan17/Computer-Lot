@@ -7,18 +7,10 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
-
-interface Profile {
-  id: string
-  full_name: string
-  company_name?: string
-  tax_registration_id?: string
-  role: string
-  created_at: string
-}
+import type { AdminProfile } from "@/types"
 
 interface ApprovalsSectionProps {
-  pendingProfiles: Profile[]
+  pendingProfiles: AdminProfile[]
   loading: boolean
   onAction?: () => void
 }
