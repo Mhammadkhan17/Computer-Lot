@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, ImageOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { CheckoutButton } from "@/components/checkout-button"
 import { useCart } from "@/hooks/useCart"
@@ -12,12 +12,19 @@ const currencyFormat = new Intl.NumberFormat("en-US", {
   currency: "USD",
 })
 
+const gradeColors: Record<string, string> = {
+  Grade_A: "bg-grade-a",
+  Grade_B: "bg-grade-b",
+  Grade_C: "bg-grade-c",
+  For_Parts: "bg-grade-parts",
+}
+
 export function CheckoutPage() {
   const { items, totalLots, subtotal } = useCart()
-  const { resolvePrice } = usePricing()
+  const { resolvePrice, isWholesale, role } = usePricing()
 
   const totalLotsCount = totalLots()
-  const isWholesale = totalLotsCount >= 10
+  const isWholesaleEligible = role === "wholesale_approved"
 
   if (items.length === 0) {
     return (
@@ -48,12 +55,29 @@ export function CheckoutPage() {
       <div className="mb-8 space-y-2">
         {items.map((item) => {
           const price = resolvePrice({ product: item.product, quantity: item.quantity, totalLotsCount })
+          const image = item.product.images?.[0]
 
           return (
             <div
               key={item.product.id}
-              className="flex items-center justify-between gap-4 border border-border bg-card px-4 py-3"
+              className="flex items-center gap-4 border border-border bg-card px-4 py-3"
             >
+              <div className="relative size-14 shrink-0 overflow-hidden bg-muted">
+                <div className="flex h-full w-full items-center justify-center">
+                  <ImageOff className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+                </div>
+                {image && (
+                  <img
+                    src={image}
+                    alt={item.product.title}
+                    className="absolute inset-0 h-full w-full object-cover"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }}
+                  />
+                )}
+                <span className={`absolute left-0 top-0 flex h-4 w-4 items-center justify-center font-mono text-[8px] font-bold text-white ${gradeColors[item.product.grade] || "bg-muted"}`}>
+                  {item.product.grade === "Grade_A" ? "A" : item.product.grade === "Grade_B" ? "B" : item.product.grade === "Grade_C" ? "C" : "FP"}
+                </span>
+              </div>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-foreground truncate">
                   {item.product.title}
@@ -80,21 +104,21 @@ export function CheckoutPage() {
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Total lots</span>
             <span className="font-mono font-medium text-foreground">{totalLotsCount}</span>
-          </div>
+            </div>
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Pricing tier</span>
             <span className="font-mono font-medium text-foreground">
-              {isWholesale ? "WHOLESALE" : "RETAIL"}
+              {isWholesale(totalLotsCount) ? "WHOLESALE" : "RETAIL"}
             </span>
           </div>
-          {!isWholesale && totalLotsCount > 0 && (
+          {isWholesaleEligible && !isWholesale(totalLotsCount) && totalLotsCount > 0 && (
             <p className="font-mono text-xs text-primary">
               ADD {10 - totalLotsCount} MORE LOTS FOR WHOLESALE PRICING
             </p>
           )}
           <div className="flex justify-between border-t border-border pt-3 font-display text-lg font-bold text-foreground">
             <span>Total</span>
-            <span className="font-mono">{currencyFormat.format(subtotal(isWholesale))}</span>
+            <span className="font-mono">{currencyFormat.format(subtotal(totalLotsCount))}</span>
           </div>
         </div>
       </div>

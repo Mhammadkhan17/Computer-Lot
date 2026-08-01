@@ -24,7 +24,15 @@ export default async function Home() {
   const all = products || []
 
   const { data: { user } } = await supabase.auth.getUser()
-  const isAdmin = user?.app_metadata?.role === "admin"
+  let isAdmin = false
+  if (user) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single()
+    isAdmin = profile?.role === "admin"
+  }
 
   return (
     <main id="main-content">

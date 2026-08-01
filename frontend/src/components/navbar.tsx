@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { ShoppingCart, LayoutDashboard } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -14,6 +14,27 @@ export function Navbar() {
   const [user, setUser] = useState<{ id: string; email?: string; role?: string } | null>(null)
   const [mounted, setMounted] = useState(false)
   const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null)
+  const activeUserIdRef = useRef<string | null>(null)
+
+  const fetchProfileRole = useCallback(async (supabase: ReturnType<typeof createClient>, userId: string) => {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", userId)
+      .single()
+    return (profile?.role as string) ?? undefined
+  }, [])
+
+  const applyUser = useCallback(
+    async (supabase: ReturnType<typeof createClient>, authUser: { id: string; email?: string }) => {
+      activeUserIdRef.current = authUser.id
+      const role = await fetchProfileRole(supabase, authUser.id)
+      if (activeUserIdRef.current === authUser.id) {
+        setUser({ id: authUser.id, email: authUser.email, role })
+      }
+    },
+    [fetchProfileRole]
+  )
 
   useEffect(() => {
     setMounted(true)
@@ -22,16 +43,15 @@ export function Navbar() {
 
     supabase.auth.getUser().then(({ data: { user: authUser } }) => {
       if (authUser) {
-        const role = (authUser.app_metadata?.role as string) ?? undefined
-        setUser({ id: authUser.id, email: authUser.email, role })
+        applyUser(supabase, authUser)
       }
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
-        const role = (session.user.app_metadata?.role as string) ?? undefined
-        setUser({ id: session.user.id, email: session.user.email, role })
+        applyUser(supabase, session.user)
       } else {
+        activeUserIdRef.current = null
         setUser(null)
       }
     })
@@ -39,7 +59,7 @@ export function Navbar() {
     return () => {
       subscription.unsubscribe()
     }
-  }, [])
+  }, [applyUser])
 
   const isAdmin = user?.role === "admin"
 

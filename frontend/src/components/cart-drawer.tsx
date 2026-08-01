@@ -13,22 +13,35 @@ const currencyFormat = new Intl.NumberFormat("en-US", {
 
 export function CartDrawer() {
   const { items, removeItem, updateQuantity, clearCart, totalLots, subtotal, cartOpen, setCartOpen } = useCart()
-  const { resolvePrice } = usePricing()
+  const { resolvePrice, isWholesale, role } = usePricing()
 
   const isOpen = cartOpen
 
   const close = () => setCartOpen(false)
 
   const totalLotsCount = totalLots()
-  const cartSubtotal = subtotal(totalLotsCount >= 10)
-
-  if (!isOpen) return null
+  const cartSubtotal = subtotal(totalLotsCount)
+  const isWholesaleEligible = role === "wholesale_approved"
 
   return (
-    <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 bg-black/50" onClick={close} />
+    <div
+      className={`fixed inset-0 z-50 transition-opacity duration-300 ${
+        isOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+      }`}
+    >
+      <div
+        className={`absolute inset-0 bg-black/50 transition-opacity duration-300 ${
+          isOpen ? "opacity-100" : "opacity-0"
+        }`}
+        onClick={close}
+      />
 
-      <div className="absolute right-0 top-0 flex h-full w-full max-w-md flex-col bg-card" style={{ overscrollBehavior: "contain" }}>
+      <div
+        className={`absolute right-0 top-0 flex h-full w-full max-w-md flex-col bg-card transition-transform duration-300 ease-out sm:max-w-lg ${
+          isOpen ? "translate-x-0" : "translate-x-full"
+        }`}
+        style={{ overscrollBehavior: "contain" }}
+      >
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <div className="flex items-center gap-2">
             <ShoppingCart className="h-5 w-5 text-muted-foreground" />
@@ -41,9 +54,9 @@ export function CartDrawer() {
           </Button>
         </div>
 
-        {totalLotsCount >= 10 && items.length > 0 && (
+        {isWholesale(totalLotsCount) && items.length > 0 && (
           <div className="border-b border-border bg-inventory-100 px-4 py-2 font-mono text-xs font-medium text-inventory-600">
-            WHOLESALE PRICING APPLIED &mdash; &ge;10 LOTS
+            Wholesale pricing applied &mdash; 10+ lots
           </div>
         )}
 
@@ -127,7 +140,7 @@ export function CartDrawer() {
               <span className="font-mono font-medium text-foreground">{totalLotsCount}</span>
             </div>
 
-            {totalLotsCount < 10 && totalLotsCount > 0 && (
+            {isWholesaleEligible && !isWholesale(totalLotsCount) && totalLotsCount > 0 && (
               <p className="font-mono text-xs text-primary">
                 ADD {10 - totalLotsCount} MORE LOTS FOR WHOLESALE PRICING
               </p>

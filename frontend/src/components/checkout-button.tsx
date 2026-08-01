@@ -4,7 +4,6 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { useCart } from "@/hooks/useCart"
-import { createClient } from "@/utils/supabase/client"
 import type { CheckoutError, CheckoutResponse } from "@/types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
@@ -20,6 +19,7 @@ export function CheckoutButton() {
     setError(null)
 
     try {
+      const { createClient } = await import("@/utils/supabase/client")
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) {
