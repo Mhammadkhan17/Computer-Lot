@@ -8,7 +8,6 @@ from fastapi.responses import StreamingResponse
 from supabase import Client
 
 from app.adapters.csv_parser import get_headers, get_template_row, parse_rows
-from app.adapters.db import get_raw_connection
 from app.adapters.product_inserter import insert_products
 from app.adapters.row_normalizer import normalize_row
 from app.adapters.row_validator import validate_row
@@ -84,37 +83,30 @@ async def update_order_status(
             detail=f"Invalid status. Must be one of: {', '.join(sorted(valid_statuses))}",
         )
 
-    conn = get_raw_connection()
-    try:
-        cur = conn.cursor()
-        if body.status == "cancelled":
-            order_resp = supabase.table("order_items").select("product_id, quantity_ordered").eq("order_id", order_id).execute()
-            items = order_resp.data or []
-            if not items:
-                raise HTTPException(status_code=404, detail="Order not found or has no items")
+    if body.status == "cancelled":
+        order_resp = supabase.table("order_items").select("product_id, quantity_ordered").eq("order_id", order_id).execute()
+        items = order_resp.data or []
+        if not items:
+            raise HTTPException(status_code=404, detail="Order not found or has no items")
 
-            for item in items:
-                cur.callproc("increment_stock_inventory", (item["product_id"], item["quantity_ordered"]))
+        for item in items:
+            supabase.rpc(
+                "increment_stock_inventory",
+                {"row_id": item["product_id"], "steps": item["quantity_ordered"]},
+            ).execute()
 
-        cur.execute(
-            "UPDATE orders SET status = %s WHERE id = %s RETURNING id, user_id, readable_order_id",
-            (body.status, order_id),
-        )
-        row = cur.fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Order not found")
+    order_resp = supabase.table("orders").select("user_id, readable_order_id").eq("id", order_id).execute()
+    order_row = order_resp.data
+    if not order_row:
+        raise HTTPException(status_code=404, detail="Order not found")
 
-        order_user_id = row[1]
-        readable_order_id = row[2]
-        conn.commit()
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error("Order status update failed: %s", e)
-        conn.rollback()
+    row = order_row[0]
+    order_user_id = row["user_id"]
+    readable_order_id = row["readable_order_id"]
+
+    update_resp = supabase.table("orders").update({"status": body.status}).eq("id", order_id).execute()
+    if not update_resp.data:
         raise HTTPException(status_code=500, detail="Order update failed")
-    finally:
-        conn.close()
 
     mgr = get_manager()
     await mgr.broadcast_to_role(

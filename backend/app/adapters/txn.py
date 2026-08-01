@@ -1,62 +1,38 @@
 import logging
 
 from fastapi import HTTPException
+from supabase import Client
 
 logger = logging.getLogger(__name__)
 
-from app.adapters.db import get_raw_connection
 
-
-def run_in_transaction(order_data, items):
-    conn = get_raw_connection()
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            """
-            INSERT INTO orders (user_id, customer_name, customer_phone, total_amount)
-            VALUES (%s, %s, %s, %s)
-            RETURNING id, readable_order_id
-            """,
-            (
-                order_data["user_id"],
-                order_data["customer_name"],
-                order_data["customer_phone"],
-                order_data["total_amount"],
-            ),
-        )
-        order_row = cur.fetchone()
-        order_id = order_row[0]
-        readable_order_id = order_row[1]
-
-        for item in items:
-            cur.execute(
-                """
-                INSERT INTO order_items (order_id, product_id, quantity_ordered, unit_price_applied)
-                VALUES (%s, %s, %s, %s)
-                """,
-                (order_id, item["product_id"], item["quantity_ordered"], item["unit_price_applied"]),
-            )
-
-        for item in items:
-            cur.callproc("decrement_stock_inventory", (item["product_id"], item["quantity_ordered"]))
-            dec_result = cur.fetchone()
-            if not dec_result or not dec_result[0]:
-                raise RuntimeError(
-                    f"Failed to decrement stock for product {item['product_id']}"
-                )
-
-        conn.commit()
-        return {
-            "order_id": str(order_id),
-            "readable_order_id": readable_order_id,
-            "commit": True,
+def run_in_transaction(supabase: Client, order_data: dict, items: list) -> dict:
+    p_items = [
+        {
+            "product_id": item.product_id,
+            "quantity_ordered": item.quantity_ordered,
+            "unit_price_applied": str(item.unit_price_applied),
         }
-    except Exception as e:
-        logger.error("Checkout transaction failed: %s", e)
-        conn.rollback()
-        raise HTTPException(
-            status_code=500,
-            detail="Checkout failed, order rolled back",
-        )
-    finally:
-        conn.close()
+        for item in items
+    ]
+
+    try:
+        resp = supabase.rpc(
+            "create_order",
+            {
+                "p_user_id": order_data["user_id"],
+                "p_customer_name": order_data["customer_name"],
+                "p_customer_phone": order_data["customer_phone"],
+                "p_total_amount": str(order_data["total_amount"]),
+                "p_items": p_items,
+            },
+        ).execute()
+    except Exception as exc:
+        logger.error("Checkout transaction failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Checkout failed, order rolled back") from exc
+
+    if not resp.data:
+        logger.error("Checkout transaction failed: no data returned")
+        raise HTTPException(status_code=500, detail="Checkout failed, order rolled back")
+
+    return resp.data

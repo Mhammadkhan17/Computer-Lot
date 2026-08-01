@@ -12,7 +12,7 @@ router = APIRouter()
 @router.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket, token: str = Query(...)) -> None:
     try:
-        payload = verify_jwt(token)
+        payload = await verify_jwt(token)
     except Exception:
         await ws.close(code=4001)
         return

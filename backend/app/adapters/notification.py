@@ -1,7 +1,7 @@
 from app.utils.ws_manager import get_manager
 
 
-def broadcast_order_update(order_data):
+async def broadcast_order_update(order_data):
     manager = get_manager()
     message = {
         "order_id": order_data["order_id"],
@@ -9,4 +9,4 @@ def broadcast_order_update(order_data):
         "total_amount": order_data["total_amount"],
         "customer_name": order_data["customer_name"],
     }
-    manager.broadcast("order_update", message)
+    await manager.broadcast("order_status_update", message)

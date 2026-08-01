@@ -1,16 +1,12 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from supabase import Client
 
-from app.adapters.notification import broadcast_order_update
-from app.adapters.pricing import resolve_all_items
-from app.adapters.stock import check_availability
-from app.adapters.txn import run_in_transaction
-from app.adapters.whatsapp import build_order_link
-from app.config import settings
+from app.adapters.order_intake import InsufficientStockError, create as create_order
 from app.database import get_supabase
-from app.schemas.order import CheckoutRequest, CheckoutResponse, ErrorResponse
+from app.schemas.order import CheckoutRequest, CheckoutResponse, ErrorResponse, StockErrorItem
 from app.utils.security import get_current_user
 
 logger = logging.getLogger(__name__)
@@ -24,53 +20,29 @@ async def create_checkout(
     supabase: Client = Depends(get_supabase),
 ):
     user_id = user["sub"]
-    profile_resp = supabase.table("profiles").select("*").eq("id", user_id).single().execute()
-    if not profile_resp.data:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
-
-    profile = profile_resp.data
-    customer_name = profile.get("full_name", "Unknown")
-    customer_phone = profile.get("phone", "")
-    role = profile.get("role", "retail")
-
-    product_ids = [item.product_id for item in checkout_req.items]
-    products_resp = supabase.table("products").select("*").in_("id", product_ids).execute()
-    products_list = products_resp.data or []
-    products_map = {p["id"]: p for p in products_list}
-
-    stock_errors = check_availability(products_list, [{"product_id": item.product_id, "quantity": item.quantity} for item in checkout_req.items])
-    if stock_errors:
-        return ErrorResponse(error="insufficient_stock", out_of_stock=stock_errors)
-
-    total_lots = sum(item.quantity for item in checkout_req.items)
-    resolved_items = resolve_all_items(products_map, [{"product_id": item.product_id, "quantity": item.quantity} for item in checkout_req.items], role, total_lots)
-
-    total_amount = sum(item.unit_price_applied * item.quantity_ordered for item in resolved_items)
-
-    order_data = {
-        "user_id": user_id,
-        "customer_name": customer_name,
-        "customer_phone": customer_phone,
-        "total_amount": total_amount,
-    }
-
-    txn_result = run_in_transaction(order_data, resolved_items)
-    order_id = txn_result["order_id"]
-    readable_order_id = txn_result["readable_order_id"]
-
-    whatsapp_link = build_order_link(readable_order_id, customer_name, total_amount, resolved_items)
-
-    broadcast_order_update({
-        "order_id": order_id,
-        "readable_order_id": readable_order_id,
-        "total_amount": total_amount,
-        "customer_name": customer_name,
-    })
-
-    return CheckoutResponse(
-        order_id=order_id,
-        readable_order_id=readable_order_id,
-        total_amount=total_amount,
-        whatsapp_deep_link=whatsapp_link,
-        items=resolved_items,
-    )
+    try:
+        return await create_order(checkout_req, supabase, user_id)
+    except InsufficientStockError as e:
+        return JSONResponse(
+            status_code=400,
+            content=ErrorResponse(
+                error="insufficient_stock",
+                out_of_stock=[
+                    StockErrorItem(
+                        product_id=err.product_id,
+                        title=err.title,
+                        available=err.available,
+                        requested=err.requested,
+                    )
+                    for err in e.stock_errors
+                ],
+            ).model_dump(),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Unexpected checkout error")
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(error="internal_error", detail=str(e)).model_dump(),
+        )

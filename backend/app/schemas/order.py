@@ -34,6 +34,7 @@ class StockErrorItem(BaseModel):
 
 class ErrorResponse(BaseModel):
     error: str
+    detail: str | None = None
     out_of_stock: list[StockErrorItem] | None = None
 
 

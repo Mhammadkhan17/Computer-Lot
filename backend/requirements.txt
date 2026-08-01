@@ -8,3 +8,5 @@ slowapi==0.1.9
 httpx>=0.24,<0.28
 pyjwt>=2.0
 pytest==8.3.4
+pytest-asyncio==1.0.0
+python-multipart==0.0.32

@@ -1,5 +1,4 @@
 import os
-import pytest
 
 os.environ.setdefault("SUPABASE_URL", "https://test.supabase.co")
 os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "test-service-role")
@@ -7,20 +6,22 @@ os.environ.setdefault("SUPABASE_JWT_SECRET", "test-secret")
 os.environ.setdefault("MERCHANT_PHONE", "1234567890")
 os.environ.setdefault("DEBUG", "true")
 
-
-def _make_item(product_id, title, quantity, unit_price):
-    return {
-        "product_id": product_id,
-        "title": title,
-        "quantity_ordered": quantity,
-        "unit_price_applied": unit_price,
-    }
+from app.schemas.order import OrderItemResponse
 
 
 def make_whatsapp_adapter():
     from app.adapters.whatsapp import build_order_link
 
     return build_order_link
+
+
+def _make_item(product_id, title, quantity, unit_price):
+    return OrderItemResponse(
+        product_id=product_id,
+        title=title,
+        quantity_ordered=quantity,
+        unit_price_applied=unit_price,
+    )
 
 
 def test_link_contains_order_id():

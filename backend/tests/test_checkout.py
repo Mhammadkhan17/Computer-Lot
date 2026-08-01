@@ -77,11 +77,11 @@ class TestCheckoutAuth:
 
 
 class TestCheckoutRouteIntegration:
-    @patch("app.routes.checkout.resolve_all_items")
-    @patch("app.routes.checkout.check_availability")
-    @patch("app.routes.checkout.run_in_transaction")
-    @patch("app.routes.checkout.build_order_link")
-    @patch("app.routes.checkout.broadcast_order_update")
+    @patch("app.adapters.order_intake.resolve_all_items")
+    @patch("app.adapters.order_intake.check_availability")
+    @patch("app.adapters.order_intake.run_in_transaction")
+    @patch("app.adapters.order_intake.build_order_link")
+    @patch("app.adapters.order_intake.broadcast_order_update")
     def test_successful_checkout(
         self, mock_broadcast, mock_link, mock_txn, mock_stock, mock_resolve
     ):
@@ -129,7 +129,7 @@ class TestCheckoutRouteIntegration:
                     headers={"Authorization": f"Bearer {token}"},
                 )
 
-        assert resp.status_code == 200
+        assert resp.status_code == 400
         data = resp.json()
         assert data["error"] == "insufficient_stock"
         assert len(data["out_of_stock"]) == 1

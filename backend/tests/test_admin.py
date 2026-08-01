@@ -113,38 +113,76 @@ class TestAdminReject:
 
 
 class TestAdminOrderStatus:
-    @patch("app.adapters.db.get_raw_connection")
-    def test_update_order_status(self, mock_get_db):
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = ("order-789", "retail-user", 42)
-        mock_conn.cursor.return_value = mock_cursor
-        mock_get_db.return_value = mock_conn
+    def test_update_order_status(self):
+        mock_order_result = [{"user_id": "retail-user", "readable_order_id": 42}]
+        mock_update_result = [{"id": "order-789", "user_id": "retail-user", "readable_order_id": 42}]
+        mock_supabase = MagicMock()
 
-        resp = TestClient(app).patch(
-            "/admin/orders/order-789/status",
-            json={"status": "completed"},
-            headers=AUTH_HEADER,
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["status"] == "updated"
+        def table_side_effect(name):
+            if name == "profiles":
+                t = MagicMock()
+                t.select.return_value.eq.return_value.single.return_value.execute.return_value.data = {
+                    "role": "admin"
+                }
+                return t
+            elif name == "orders":
+                t = MagicMock()
+                t.select.return_value.eq.return_value.execute.return_value.data = mock_order_result
+                t.update.return_value.eq.return_value.execute.return_value.data = mock_update_result
+                return t
+            return MagicMock()
 
-    @patch("app.adapters.db.get_raw_connection")
-    def test_cancel_order_restocks_items(self, mock_get_db):
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = ("order-789", "retail-user", 42)
-        mock_conn.cursor.return_value = mock_cursor
-        mock_get_db.return_value = mock_conn
+        mock_supabase.table.side_effect = table_side_effect
+        app.dependency_overrides[get_supabase] = lambda: mock_supabase
+        try:
+            resp = TestClient(app).patch(
+                "/admin/orders/order-789/status",
+                json={"status": "completed"},
+                headers=AUTH_HEADER,
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["status"] == "updated"
+        finally:
+            app.dependency_overrides.clear()
 
-        resp = TestClient(app).patch(
-            "/admin/orders/order-789/status",
-            json={"status": "cancelled"},
-            headers=AUTH_HEADER,
-        )
-        assert resp.status_code == 200
-        assert resp.json()["status"] == "updated"
+    def test_cancel_order_restocks_items(self):
+        mock_order_items = [{"product_id": "p1", "quantity_ordered": 3}]
+        mock_order_result = [{"user_id": "retail-user", "readable_order_id": 42}]
+        mock_update_result = [{"id": "order-789", "user_id": "retail-user", "readable_order_id": 42}]
+        mock_supabase = MagicMock()
+
+        def table_side_effect(name):
+            if name == "profiles":
+                t = MagicMock()
+                t.select.return_value.eq.return_value.single.return_value.execute.return_value.data = {
+                    "role": "admin"
+                }
+                return t
+            elif name == "order_items":
+                t = MagicMock()
+                t.select.return_value.eq.return_value.execute.return_value.data = mock_order_items
+                return t
+            elif name == "orders":
+                t = MagicMock()
+                t.select.return_value.eq.return_value.execute.return_value.data = mock_order_result
+                t.update.return_value.eq.return_value.execute.return_value.data = mock_update_result
+                return t
+            return MagicMock()
+
+        mock_supabase.table.side_effect = table_side_effect
+        app.dependency_overrides[get_supabase] = lambda: mock_supabase
+        try:
+            resp = TestClient(app).patch(
+                "/admin/orders/order-789/status",
+                json={"status": "cancelled"},
+                headers=AUTH_HEADER,
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["status"] == "updated"
+        finally:
+            app.dependency_overrides.clear()
 
     def test_update_status_rejects_non_admin(self):
         token = _make_token({"sub": "retail-user", "role": "retail"})
