@@ -68,6 +68,11 @@ CREATE TABLE public.order_items (
     unit_price_applied DECIMAL(12,2) NOT NULL
 );
 
+-- Covering indexes for FK columns (Postgres does not auto-index FKs).
+CREATE INDEX IF NOT EXISTS idx_order_items_order_id   ON public.order_items(order_id);
+CREATE INDEX IF NOT EXISTS idx_order_items_product_id ON public.order_items(product_id);
+CREATE INDEX IF NOT EXISTS idx_orders_user_id         ON public.orders(user_id);
+
 -- ============================================================
 -- ATOMIC STOCK FUNCTIONS
 -- ============================================================
@@ -85,7 +90,7 @@ BEGIN
     GET DIAGNOSTICS rows_affected = ROW_COUNT;
     RETURN rows_affected > 0;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 CREATE OR REPLACE FUNCTION increment_stock_inventory(row_id UUID, steps INT)
 RETURNS BOOLEAN AS $$
@@ -100,4 +105,4 @@ BEGIN
     GET DIAGNOSTICS rows_affected = ROW_COUNT;
     RETURN rows_affected > 0;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
