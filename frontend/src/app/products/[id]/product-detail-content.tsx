@@ -27,9 +27,10 @@ const gradeConfig: Record<string, { label: string; color: string; full: string }
 interface ProductDetailContentProps {
   product: Product
   relatedPool: Product[]
+  isAdmin?: boolean
 }
 
-export function ProductDetailContent({ product, relatedPool }: ProductDetailContentProps) {
+export function ProductDetailContent({ product, relatedPool, isAdmin }: ProductDetailContentProps) {
   const addItem = useCart((s) => s.addItem)
   const inStock = product.available_stock_lots > 0
   const [imgError, setImgError] = useState<Record<number, boolean>>({})
@@ -426,15 +427,18 @@ export function ProductDetailContent({ product, relatedPool }: ProductDetailCont
             </div>
           </div>
 
-          <button
-            onClick={() => addItem(product)}
-            disabled={!inStock}
-            className="mt-4 hidden w-full items-center justify-center gap-2 bg-accent px-6 py-3 text-base font-semibold text-accent-foreground transition-all hover:bg-accent/90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer lg:flex"
-          >
-            <ShoppingCart className="h-5 w-5" />
-            {inStock ? "Add to Cart" : "Out of Stock"}
-          </button>
+          {!isAdmin && (
+            <button
+              onClick={() => addItem(product)}
+              disabled={!inStock}
+              className="mt-4 hidden w-full items-center justify-center gap-2 bg-accent px-6 py-3 text-base font-semibold text-accent-foreground transition-all hover:bg-accent/90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer lg:flex"
+            >
+              <ShoppingCart className="h-5 w-5" />
+              {inStock ? "Add to Cart" : "Out of Stock"}
+            </button>
+          )}
 
+          {!isAdmin && (
           <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95 p-4 shadow-lg backdrop-blur-sm lg:hidden">
             <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
               <div>
@@ -454,6 +458,7 @@ export function ProductDetailContent({ product, relatedPool }: ProductDetailCont
               </button>
             </div>
           </div>
+          )}
 
           {product.tags && product.tags.length > 0 && (
             <div className="mt-6 flex flex-wrap gap-2">
@@ -474,7 +479,7 @@ export function ProductDetailContent({ product, relatedPool }: ProductDetailCont
           </h2>
           <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {related.map((p) => (
-              <ProductCard key={p.id} product={p} />
+              <ProductCard key={p.id} product={p} isAdmin={isAdmin} />
             ))}
           </div>
         </section>

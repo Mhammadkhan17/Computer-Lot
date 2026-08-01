@@ -14,8 +14,12 @@ export const createClient = () =>
           })
         },
         setAll(cookiesToSet) {
+          const secure =
+            typeof window !== "undefined" && window.location.protocol === "https:"
+              ? "; Secure"
+              : ""
           cookiesToSet.forEach(({ name, value, options }) => {
-            document.cookie = `${name}=${value}; path=/; max-age=${options?.maxAge ?? 31536000}; SameSite=Lax${options?.domain ? `; domain=${options.domain}` : ""}`
+            document.cookie = `${name}=${value}; path=/; max-age=${options?.maxAge ?? 31536000}; SameSite=Lax${secure}${options?.domain ? `; domain=${options.domain}` : ""}`
           })
         },
       },

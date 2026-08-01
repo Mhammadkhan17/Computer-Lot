@@ -6,5 +6,30 @@ const nextConfig = {
     config.performance.maxAssetSize = 512_000
     return config
   },
+  async headers() {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+    const csp = [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline'",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "img-src 'self' data: https:",
+      "font-src https://fonts.gstatic.com",
+      `connect-src 'self' https://*.supabase.co ${apiUrl}`,
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+    ].join("; ")
+    return [
+      {
+        source: "/(.*)",
+        headers: [
+          { key: "Content-Security-Policy", value: csp },
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+        ],
+      },
+    ]
+  },
 }
 export default nextConfig

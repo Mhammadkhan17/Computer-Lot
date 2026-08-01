@@ -34,5 +34,22 @@ export default async function ProductDetailPage({ params }: PageProps) {
     .order("created_at", { ascending: false })
     .limit(20)
 
-  return <ProductDetailContent product={product as Product} relatedPool={(pool as Product[]) || []} />
+  const { data: { user } } = await supabase.auth.getUser()
+  let isAdmin = false
+  if (user) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single()
+    isAdmin = profile?.role === "admin"
+  }
+
+  return (
+    <ProductDetailContent
+      product={product as Product}
+      relatedPool={(pool as Product[]) || []}
+      isAdmin={isAdmin}
+    />
+  )
 }

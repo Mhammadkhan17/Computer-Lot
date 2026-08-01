@@ -117,20 +117,22 @@ export function Navbar() {
             </Link>
           )}
 
-          <Button
-            variant="ghost"
-            size="icon"
-            className="relative text-muted-foreground hover:bg-white/5 hover:text-foreground"
-            onClick={() => setCartOpen(true)}
-            aria-label="Open cart"
-          >
-            <ShoppingCart className="h-5 w-5" aria-hidden="true" />
-            {mounted && totalItems > 0 && (
-              <span className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center bg-accent text-[10px] font-bold text-accent-foreground">
-                {totalItems}
-              </span>
-            )}
-          </Button>
+          {!isAdmin && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="relative text-muted-foreground hover:bg-white/5 hover:text-foreground"
+              onClick={() => setCartOpen(true)}
+              aria-label="Open cart"
+            >
+              <ShoppingCart className="h-5 w-5" aria-hidden="true" />
+              {mounted && totalItems > 0 && (
+                <span className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center bg-accent text-[10px] font-bold text-accent-foreground">
+                  {totalItems}
+                </span>
+              )}
+            </Button>
+          )}
         </div>
       </div>
     </header>

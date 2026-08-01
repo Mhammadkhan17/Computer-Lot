@@ -302,8 +302,16 @@ export function ProductsSection({ products, loading, onRefresh }: ProductsSectio
                           {product.grade.replace("_", " ")}
                         </Badge>
                       </td>
-                      <td className="py-2 pr-4 font-mono text-sm text-foreground">
-                        {product.available_stock_lots}
+                      <td className="py-2 pr-4">
+                        {product.available_stock_lots === 0 ? (
+                          <Badge variant="destructive" className="text-xs">
+                            Out of Stock
+                          </Badge>
+                        ) : (
+                          <span className="font-mono text-sm text-foreground">
+                            {product.available_stock_lots}
+                          </span>
+                        )}
                       </td>
                       <td className="py-2 pr-4 font-mono text-sm text-foreground">
                         {currencyFormat.format(Number(product.retail_price_per_lot))}
