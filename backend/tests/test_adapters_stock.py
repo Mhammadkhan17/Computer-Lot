@@ -2,10 +2,11 @@ import os
 import pytest
 
 os.environ.setdefault("SUPABASE_URL", "https://test.supabase.co")
+os.environ.setdefault("SUPABASE_ANON_KEY", "test-anon-key")
 os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "test-service-role")
 os.environ.setdefault("SUPABASE_JWT_SECRET", "test-secret")
 os.environ.setdefault("MERCHANT_PHONE", "1234567890")
-os.environ.setdefault("DEBUG", "true")
+os.environ.setdefault("DEBUG", "false")
 
 
 def _make_product(pid, stock, title="Widget"):

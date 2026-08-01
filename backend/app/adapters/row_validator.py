@@ -35,18 +35,30 @@ def validate_row(row: dict) -> tuple[dict, list[str]]:
     elif stock < 0:
         errs.append("Stock must be >= 0")
 
-    if errs:
-        return {}, errs
-
     items_per_lot = 1
-    default_1, _ = _parse_int(row.get("items_per_lot", "").strip() or "1", "items per lot")
-    if default_1 is not None:
-        items_per_lot = default_1
+    parsed_items, items_err = _parse_int(row.get("items_per_lot", "").strip() or "1", "items per lot")
+    if items_err:
+        errs.append(items_err)
+    elif parsed_items is not None:
+        if parsed_items < 1:
+            errs.append("Items per lot must be >= 1")
+        else:
+            items_per_lot = parsed_items
 
     min_wholesale = 5
-    default_5, _ = _parse_int(row.get("minimum_wholesale_lots", "").strip() or "5", "minimum wholesale lots")
-    if default_5 is not None:
-        min_wholesale = default_5
+    parsed_min, min_err = _parse_int(
+        row.get("minimum_wholesale_lots", "").strip() or "5", "minimum wholesale lots"
+    )
+    if min_err:
+        errs.append(min_err)
+    elif parsed_min is not None:
+        if parsed_min < 1:
+            errs.append("Minimum wholesale lots must be >= 1")
+        else:
+            min_wholesale = parsed_min
+
+    if errs:
+        return {}, errs
 
     return {
         "title": title,

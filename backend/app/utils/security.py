@@ -19,22 +19,21 @@ async def verify_jwt(token: str) -> dict:
             resp = await client.get(
                 f"{settings.supabase_url}/auth/v1/user",
                 headers={
-                    "apikey": settings.supabase_service_role_key,
+                    "apikey": settings.supabase_anon_key,
                     "Authorization": f"Bearer {token}",
                 },
             )
             if resp.status_code == 200:
                 user_data = resp.json()
-                logger.info("JWT verified via Auth server for user: %s", user_data.get("id"))
+                logger.info("JWT verified via Auth server for user: %s", str(user_data.get("id"))[:8])
                 return {
                     "sub": user_data.get("id"),
                     "email": user_data.get("email"),
                     "role": user_data.get("role", "authenticated"),
                 }
             logger.warning(
-                "Auth server rejected token: %s %s",
+                "Auth server rejected token: status=%s",
                 resp.status_code,
-                resp.text[:200],
             )
     except httpx.RequestError as e:
         logger.warning("Auth server unreachable, falling back to local verification: %s", e)
@@ -55,7 +54,7 @@ def _verify_jwt_locally(token: str) -> dict:
             algorithms=["HS256"],
             options={"verify_aud": False},
         )
-        logger.info("JWT verified locally for user: %s", payload.get("sub"))
+        logger.info("JWT verified locally for user: %s", str(payload.get("sub"))[:8])
         return payload
     except PyJWTError as e:
         logger.error("Local JWT verification failed: %s", e)
@@ -77,6 +76,13 @@ async def get_current_user(
     return await verify_jwt(credentials.credentials)
 
 
-def check_role(payload: dict, required_role: str) -> bool:
-    role = payload.get("role", "retail")
-    return role == required_role or role == "admin"
+async def get_access_token(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+) -> str:
+    if credentials is None:
+        logger.warning("Missing authorization header")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authorization header",
+        )
+    return credentials.credentials

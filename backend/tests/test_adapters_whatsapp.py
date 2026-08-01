@@ -4,7 +4,7 @@ os.environ.setdefault("SUPABASE_URL", "https://test.supabase.co")
 os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "test-service-role")
 os.environ.setdefault("SUPABASE_JWT_SECRET", "test-secret")
 os.environ.setdefault("MERCHANT_PHONE", "1234567890")
-os.environ.setdefault("DEBUG", "true")
+os.environ.setdefault("DEBUG", "false")
 
 from app.schemas.order import OrderItemResponse
 
@@ -69,6 +69,28 @@ def test_link_uses_configured_merchant_phone(monkeypatch):
     link = adapter(readable_order_id=1, customer_name="Bob", total_amount=50.0, items=items)
     assert "5551234" in link
     monkeypatch.setattr(config_module.settings, "merchant_phone", original)
+
+
+def test_link_sanitizes_customer_name_newlines():
+    adapter = make_whatsapp_adapter()
+    items = [_make_item("p1", "Widget", 1, 50.0)]
+    link = adapter(
+        readable_order_id=1,
+        customer_name="Alice\nBcc: evil@example.com",
+        total_amount=50.0,
+        items=items,
+    )
+    assert "Bcc:" not in link
+    assert "Alice" in link
+
+
+def test_link_sanitizes_title_control_chars():
+    adapter = make_whatsapp_adapter()
+    items = [_make_item("p1", "Widget\t\nMalware", 1, 50.0)]
+    link = adapter(readable_order_id=1, customer_name="Alice", total_amount=50.0, items=items)
+    assert "\t" not in link
+    assert "\n" not in link
+    assert "Widget%20Malware" in link
 
 
 def test_link_contains_receipt_url(monkeypatch):

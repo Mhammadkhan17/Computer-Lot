@@ -1,6 +1,12 @@
 from app.schemas.order import StockErrorItem
 
 
+class InsufficientStockError(Exception):
+    def __init__(self, stock_errors: list[StockErrorItem]) -> None:
+        self.stock_errors = stock_errors
+        super().__init__("insufficient_stock")
+
+
 def check_availability(products, quantities):
     products_by_id = {p["id"]: p for p in products}
     errors = []

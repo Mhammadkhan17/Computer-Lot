@@ -9,6 +9,11 @@ node_modules/
 .pnp
 .pnp.js
 
+# opencode auto-generated plugin deps
+.opencode/node_modules/
+.opencode/package.json
+.opencode/package-lock.json
+
 # Next.js
 .next/
 out/

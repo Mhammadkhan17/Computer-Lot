@@ -2,10 +2,11 @@ import os
 from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("SUPABASE_URL", "https://test.supabase.co")
+os.environ.setdefault("SUPABASE_ANON_KEY", "test-anon-key")
 os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "test-service-role")
 os.environ.setdefault("SUPABASE_JWT_SECRET", "test-secret")
 os.environ.setdefault("MERCHANT_PHONE", "1234567890")
-os.environ.setdefault("DEBUG", "true")
+os.environ.setdefault("DEBUG", "false")
 
 import jwt
 import pytest
@@ -13,7 +14,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.config import settings
-from app.database import get_supabase
+from app.database import get_service_role_supabase, get_supabase, get_user_supabase
 from app.utils.ws_manager import get_manager
 
 
@@ -48,6 +49,24 @@ def override_deps():
     mock_supabase = MagicMock()
     products_table_mock = MagicMock()
 
+    def rpc_side(function_name, params):
+        r = MagicMock()
+        if function_name in ("admin_set_profile_role", "admin_cancel_order"):
+            if function_name == "admin_cancel_order":
+                r.execute.return_value.data = {
+                    "status": "cancelled",
+                    "order_id": "order-789",
+                    "readable_order_id": 42,
+                    "user_id": "retail-user",
+                }
+            else:
+                r.execute.return_value.data = {"status": "updated"}
+        elif function_name == "expire_pending_orders":
+            r.execute.return_value.data = {"expired": 3}
+        return r
+
+    mock_supabase.rpc.side_effect = rpc_side
+
     def mock_table(name):
         t = MagicMock()
         if name == "products":
@@ -74,6 +93,8 @@ def override_deps():
     mock_supabase.table.side_effect = mock_table
 
     app.dependency_overrides[get_supabase] = lambda: mock_supabase
+    app.dependency_overrides[get_user_supabase] = lambda: mock_supabase
+    app.dependency_overrides[get_service_role_supabase] = lambda: mock_supabase
     yield
     app.dependency_overrides.clear()
 
@@ -133,7 +154,7 @@ class TestAdminOrderStatus:
             return MagicMock()
 
         mock_supabase.table.side_effect = table_side_effect
-        app.dependency_overrides[get_supabase] = lambda: mock_supabase
+        app.dependency_overrides[get_user_supabase] = lambda: mock_supabase
         try:
             resp = TestClient(app).patch(
                 "/admin/orders/order-789/status",
@@ -146,10 +167,7 @@ class TestAdminOrderStatus:
         finally:
             app.dependency_overrides.clear()
 
-    def test_cancel_order_restocks_items(self):
-        mock_order_items = [{"product_id": "p1", "quantity_ordered": 3}]
-        mock_order_result = [{"user_id": "retail-user", "readable_order_id": 42}]
-        mock_update_result = [{"id": "order-789", "user_id": "retail-user", "readable_order_id": 42}]
+    def test_cancel_order_restocks_items_via_rpc(self):
         mock_supabase = MagicMock()
 
         def table_side_effect(name):
@@ -159,19 +177,20 @@ class TestAdminOrderStatus:
                     "role": "admin"
                 }
                 return t
-            elif name == "order_items":
-                t = MagicMock()
-                t.select.return_value.eq.return_value.execute.return_value.data = mock_order_items
-                return t
-            elif name == "orders":
-                t = MagicMock()
-                t.select.return_value.eq.return_value.execute.return_value.data = mock_order_result
-                t.update.return_value.eq.return_value.execute.return_value.data = mock_update_result
-                return t
             return MagicMock()
 
         mock_supabase.table.side_effect = table_side_effect
-        app.dependency_overrides[get_supabase] = lambda: mock_supabase
+
+        cancel_rpc = MagicMock()
+        cancel_rpc.execute.return_value.data = {
+            "status": "cancelled",
+            "order_id": "order-789",
+            "readable_order_id": 42,
+            "user_id": "retail-user",
+        }
+        mock_supabase.rpc.return_value = cancel_rpc
+
+        app.dependency_overrides[get_user_supabase] = lambda: mock_supabase
         try:
             resp = TestClient(app).patch(
                 "/admin/orders/order-789/status",
@@ -179,8 +198,10 @@ class TestAdminOrderStatus:
                 headers=AUTH_HEADER,
             )
             assert resp.status_code == 200
-            data = resp.json()
-            assert data["status"] == "updated"
+            assert resp.json()["status"] == "updated"
+            mock_supabase.rpc.assert_called_once_with(
+                "admin_cancel_order", {"p_order_id": "order-789"}
+            )
         finally:
             app.dependency_overrides.clear()
 
@@ -200,6 +221,44 @@ class TestAdminOrderStatus:
             headers=AUTH_HEADER,
         )
         assert resp.status_code == 422
+
+
+class TestAdminExpireOrders:
+    def test_expire_orders_calls_rpc(self):
+        resp = TestClient(app).post(
+            "/admin/expire-orders",
+            json={"older_than_hours": 24},
+            headers=AUTH_HEADER,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["expired"] == 3
+
+    def test_expire_orders_defaults_to_24h(self):
+        resp = TestClient(app).post("/admin/expire-orders", json={}, headers=AUTH_HEADER)
+        assert resp.status_code == 200
+        assert resp.json()["expired"] == 3
+
+    def test_expire_orders_rejects_non_admin(self):
+        token = _make_token({"sub": "retail-user", "role": "retail"})
+        resp = TestClient(app).post("/admin/expire-orders", headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 403
+
+
+class TestAdminRateLimit:
+    def test_admin_mutation_rate_limited_per_user(self):
+        from app.main import limiter
+
+        limiter.enabled = True
+        try:
+            client = TestClient(app)
+            statuses = [
+                client.post("/admin/profiles/user-456/approve", headers=AUTH_HEADER).status_code
+                for _ in range(31)
+            ]
+            assert statuses[:30] == [200] * 30
+            assert statuses[30] == 429
+        finally:
+            limiter.enabled = False
 
 
 class TestAdminProducts:

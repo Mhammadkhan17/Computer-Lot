@@ -1,8 +1,10 @@
+from fastapi import Depends
 from postgrest._sync.client import SyncPostgrestClient
 from postgrest.utils import SyncClient
 from supabase import create_client, Client
 
 from app.config import settings
+from app.utils.security import get_access_token
 
 
 # HTTP/2 connections are being terminated by Supabase server between requests.
@@ -25,4 +27,17 @@ SyncPostgrestClient.create_session = _patched_create_session
 
 
 def get_supabase() -> Client:
+    """Anonymous-key Supabase client (RLS enforced). Default for general access."""
+    return create_client(settings.supabase_url, settings.supabase_anon_key)
+
+
+def get_user_supabase(token: str = Depends(get_access_token)) -> Client:
+    """Anonymous-key client authenticated as the caller (RLS enforced per-user)."""
+    client = create_client(settings.supabase_url, settings.supabase_anon_key)
+    client.postgrest.auth(token)
+    return client
+
+
+def get_service_role_supabase() -> Client:
+    """service_role client — used ONLY by the /checkout transaction path (ADR-009)."""
     return create_client(settings.supabase_url, settings.supabase_service_role_key)

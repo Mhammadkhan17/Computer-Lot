@@ -5,10 +5,11 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 os.environ.setdefault("SUPABASE_URL", "https://test.supabase.co")
+os.environ.setdefault("SUPABASE_ANON_KEY", "test-anon-key")
 os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "test-service-role")
 os.environ.setdefault("SUPABASE_JWT_SECRET", "test-secret")
 os.environ.setdefault("MERCHANT_PHONE", "1234567890")
-os.environ.setdefault("DEBUG", "true")
+os.environ.setdefault("DEBUG", "false")
 
 
 def _mock_supabase(data):
@@ -66,3 +67,40 @@ def test_rpc_error_raises_http_500():
     with pytest.raises(HTTPException) as exc:
         run_in_transaction(supabase, _order_data(), _items())
     assert exc.value.status_code == 500
+
+
+def test_insufficient_stock_result_raises_structured_error():
+    from app.adapters.stock import InsufficientStockError
+    from app.adapters.txn import run_in_transaction
+
+    supabase = _mock_supabase(
+        {
+            "commit": False,
+            "insufficient_stock": True,
+            "out_of_stock": [
+                {
+                    "product_id": "p1",
+                    "title": "Product p1",
+                    "available": 2,
+                    "requested": 5,
+                }
+            ],
+        }
+    )
+
+    with pytest.raises(InsufficientStockError) as exc:
+        run_in_transaction(supabase, _order_data(), _items())
+    assert len(exc.value.stock_errors) == 1
+    err = exc.value.stock_errors[0]
+    assert err.product_id == "p1"
+    assert err.available == 2
+    assert err.requested == 5
+
+
+def test_commit_true_result_returns_data():
+    from app.adapters.txn import run_in_transaction
+
+    supabase = _mock_supabase({"order_id": "o1", "readable_order_id": 1001, "commit": True})
+
+    result = run_in_transaction(supabase, _order_data(), _items())
+    assert result["commit"] is True

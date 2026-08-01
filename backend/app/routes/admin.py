@@ -1,9 +1,8 @@
 import csv
 import io
 import logging
-from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from fastapi.responses import StreamingResponse
 from supabase import Client
 
@@ -11,8 +10,9 @@ from app.adapters.csv_parser import get_headers, get_template_row, parse_rows
 from app.adapters.product_inserter import insert_products
 from app.adapters.row_normalizer import normalize_row
 from app.adapters.row_validator import validate_row
-from app.database import get_supabase
-from app.schemas.admin import AdminActionResponse
+from app.database import get_user_supabase
+from app.rate_limit import limiter
+from app.schemas.admin import AdminActionResponse, ExpireOrdersRequest
 from app.schemas.order import OrderStatusUpdate
 from app.schemas.product import ProductImportResponse, RowImportError
 from app.utils.security import get_current_user
@@ -30,14 +30,16 @@ def _assert_admin(user: dict, supabase: Client) -> None:
 
 
 @router.post("/profiles/{profile_id}/approve", response_model=AdminActionResponse)
+@limiter.limit("30/minute")
 async def approve_profile(
+    request: Request,
     profile_id: str,
     user: dict = Depends(get_current_user),
-    supabase: Client = Depends(get_supabase),
+    supabase: Client = Depends(get_user_supabase),
 ):
     _assert_admin(user, supabase)
 
-    supabase.table("profiles").update({"role": "wholesale_approved"}).eq("id", profile_id).execute()
+    _set_profile_role(supabase, profile_id, "wholesale_approved")
 
     await get_manager().broadcast_to_role(
         "profile_update",
@@ -49,14 +51,16 @@ async def approve_profile(
 
 
 @router.post("/profiles/{profile_id}/reject", response_model=AdminActionResponse)
+@limiter.limit("30/minute")
 async def reject_profile(
+    request: Request,
     profile_id: str,
     user: dict = Depends(get_current_user),
-    supabase: Client = Depends(get_supabase),
+    supabase: Client = Depends(get_user_supabase),
 ):
     _assert_admin(user, supabase)
 
-    supabase.table("profiles").update({"role": "retail"}).eq("id", profile_id).execute()
+    _set_profile_role(supabase, profile_id, "retail")
 
     await get_manager().broadcast_to_role(
         "profile_update",
@@ -67,12 +71,23 @@ async def reject_profile(
     return AdminActionResponse(status="rejected")
 
 
+def _set_profile_role(supabase: Client, profile_id: str, role: str) -> None:
+    resp = supabase.rpc(
+        "admin_set_profile_role",
+        {"p_profile_id": profile_id, "p_role": role},
+    ).execute()
+    if not resp.data or resp.data.get("status") == "not_found":
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+
 @router.patch("/orders/{order_id}/status", response_model=AdminActionResponse)
+@limiter.limit("30/minute")
 async def update_order_status(
+    request: Request,
     order_id: str,
     body: OrderStatusUpdate,
     user: dict = Depends(get_current_user),
-    supabase: Client = Depends(get_supabase),
+    supabase: Client = Depends(get_user_supabase),
 ):
     _assert_admin(user, supabase)
 
@@ -84,29 +99,25 @@ async def update_order_status(
         )
 
     if body.status == "cancelled":
-        order_resp = supabase.table("order_items").select("product_id, quantity_ordered").eq("order_id", order_id).execute()
-        items = order_resp.data or []
-        if not items:
-            raise HTTPException(status_code=404, detail="Order not found or has no items")
+        cancel_resp = supabase.rpc("admin_cancel_order", {"p_order_id": order_id}).execute()
+        if not cancel_resp.data or cancel_resp.data.get("status") == "not_found":
+            raise HTTPException(status_code=404, detail="Order not found")
+        data = cancel_resp.data
+        readable_order_id = data.get("readable_order_id")
+        order_user_id = data.get("user_id")
+    else:
+        order_resp = supabase.table("orders").select("user_id, readable_order_id").eq("id", order_id).execute()
+        order_rows = order_resp.data
+        if not order_rows:
+            raise HTTPException(status_code=404, detail="Order not found")
 
-        for item in items:
-            supabase.rpc(
-                "increment_stock_inventory",
-                {"row_id": item["product_id"], "steps": item["quantity_ordered"]},
-            ).execute()
+        row = order_rows[0]
+        order_user_id = row["user_id"]
+        readable_order_id = row["readable_order_id"]
 
-    order_resp = supabase.table("orders").select("user_id, readable_order_id").eq("id", order_id).execute()
-    order_row = order_resp.data
-    if not order_row:
-        raise HTTPException(status_code=404, detail="Order not found")
-
-    row = order_row[0]
-    order_user_id = row["user_id"]
-    readable_order_id = row["readable_order_id"]
-
-    update_resp = supabase.table("orders").update({"status": body.status}).eq("id", order_id).execute()
-    if not update_resp.data:
-        raise HTTPException(status_code=500, detail="Order update failed")
+        update_resp = supabase.table("orders").update({"status": body.status}).eq("id", order_id).execute()
+        if not update_resp.data:
+            raise HTTPException(status_code=500, detail="Order update failed")
 
     mgr = get_manager()
     await mgr.broadcast_to_role(
@@ -135,7 +146,7 @@ async def update_order_status(
 @router.get("/products/template")
 async def download_template(
     user: dict = Depends(get_current_user),
-    supabase: Client = Depends(get_supabase),
+    supabase: Client = Depends(get_user_supabase),
 ):
     _assert_admin(user, supabase)
 
@@ -153,14 +164,18 @@ async def download_template(
 
 
 @router.post("/products/import", response_model=ProductImportResponse)
+@limiter.limit("30/minute")
 async def import_products(
+    request: Request,
     file: UploadFile = File(...),
     user: dict = Depends(get_current_user),
-    supabase: Client = Depends(get_supabase),
+    supabase: Client = Depends(get_user_supabase),
 ):
     _assert_admin(user, supabase)
 
     content = await file.read()
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File too large (max 5 MB)")
     if not content or not content.strip():
         raise HTTPException(status_code=400, detail="File is empty")
 
@@ -193,10 +208,28 @@ async def import_products(
 
 
 @router.post("/products/broadcast-update")
+@limiter.limit("30/minute")
 async def broadcast_product_update(
+    request: Request,
     user: dict = Depends(get_current_user),
-    supabase: Client = Depends(get_supabase),
+    supabase: Client = Depends(get_user_supabase),
 ):
     _assert_admin(user, supabase)
     await get_manager().broadcast_to_role("product_update", {}, role="admin")
     return {"status": "ok"}
+
+
+@router.post("/expire-orders")
+@limiter.limit("30/minute")
+async def expire_orders(
+    request: Request,
+    body: ExpireOrdersRequest | None = None,
+    user: dict = Depends(get_current_user),
+    supabase: Client = Depends(get_user_supabase),
+):
+    _assert_admin(user, supabase)
+    older_than_hours = (body.older_than_hours if body else None) or 24
+    resp = supabase.rpc("expire_pending_orders", {"p_older_than_hours": older_than_hours}).execute()
+    if not resp.data:
+        raise HTTPException(status_code=500, detail="Order expiry failed")
+    return resp.data

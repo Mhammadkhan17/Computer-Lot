@@ -7,7 +7,7 @@ os.environ.setdefault("SUPABASE_URL", "https://test.supabase.co")
 os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "test-service-role")
 os.environ.setdefault("SUPABASE_JWT_SECRET", "test-secret")
 os.environ.setdefault("MERCHANT_PHONE", "1234567890")
-os.environ.setdefault("DEBUG", "true")
+os.environ.setdefault("DEBUG", "false")
 
 
 def test_parse_rows_valid_csv():
@@ -157,6 +157,36 @@ def test_validate_row_empty_returns_errors():
     assert len(errs) >= 2
     assert "Missing title" in errs
     assert "Missing SKU" in errs
+
+
+def test_validate_row_zero_items_per_lot():
+    from app.adapters.row_validator import validate_row
+
+    row = {
+        "title": "Widget",
+        "sku": "WD-001",
+        "retail_price_per_lot": "100.00",
+        "wholesale_price_per_lot": "80.00",
+        "available_stock_lots": "10",
+        "items_per_lot": "0",
+    }
+    validated, errs = validate_row(row)
+    assert any("items per lot" in e.lower() for e in errs)
+
+
+def test_validate_row_negative_min_wholesale():
+    from app.adapters.row_validator import validate_row
+
+    row = {
+        "title": "Widget",
+        "sku": "WD-001",
+        "retail_price_per_lot": "100.00",
+        "wholesale_price_per_lot": "80.00",
+        "available_stock_lots": "10",
+        "minimum_wholesale_lots": "-3",
+    }
+    validated, errs = validate_row(row)
+    assert any("minimum wholesale lots" in e.lower() for e in errs)
 
 
 def test_normalize_row_basic():

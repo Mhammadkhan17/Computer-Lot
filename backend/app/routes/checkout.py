@@ -1,11 +1,13 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from supabase import Client
 
-from app.adapters.order_intake import InsufficientStockError, create as create_order
-from app.database import get_supabase
+from app.adapters.stock import InsufficientStockError
+from app.adapters.order_intake import create as create_order
+from app.database import get_service_role_supabase, get_user_supabase
+from app.rate_limit import limiter
 from app.schemas.order import CheckoutRequest, CheckoutResponse, ErrorResponse, StockErrorItem
 from app.utils.security import get_current_user
 
@@ -14,14 +16,17 @@ router = APIRouter(prefix="/checkout", tags=["checkout"])
 
 
 @router.post("", response_model=CheckoutResponse | ErrorResponse)
+@limiter.limit("10/minute")
 async def create_checkout(
+    request: Request,
     checkout_req: CheckoutRequest,
     user: dict = Depends(get_current_user),
-    supabase: Client = Depends(get_supabase),
+    supabase: Client = Depends(get_user_supabase),
+    tx_supabase: Client = Depends(get_service_role_supabase),
 ):
     user_id = user["sub"]
     try:
-        return await create_order(checkout_req, supabase, user_id)
+        return await create_order(checkout_req, supabase, tx_supabase, user_id)
     except InsufficientStockError as e:
         return JSONResponse(
             status_code=400,
@@ -40,9 +45,9 @@ async def create_checkout(
         )
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         logger.exception("Unexpected checkout error")
         return JSONResponse(
             status_code=500,
-            content=ErrorResponse(error="internal_error", detail=str(e)).model_dump(),
+            content=ErrorResponse(error="internal_error").model_dump(),
         )

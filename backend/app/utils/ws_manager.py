@@ -20,8 +20,8 @@ class ConnectionManager:
     def __init__(self) -> None:
         self._connections: dict[str, list[tuple[WebSocket, str]]] = {}
 
-    async def connect(self, ws: WebSocket, user_id: str, role: str) -> None:
-        await ws.accept()
+    async def connect(self, ws: WebSocket, user_id: str, role: str, subprotocol: str | None = None) -> None:
+        await ws.accept(subprotocol=subprotocol)
         self._connections.setdefault(user_id, []).append((ws, role))
 
     def disconnect(self, ws: WebSocket, user_id: str) -> None:
