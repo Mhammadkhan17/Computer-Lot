@@ -2,9 +2,165 @@
 
 All notable changes to this project are documented in this file.
 
-Last updated: 2026-08-01 12:31 UTC
+Last updated: 2026-08-01 23:30 UTC
 
 ## [Unreleased]
+
+### Security Hardening — Round 1 (C1–C4, H1–H4)
+
+#### Fixed: C1 — service_role key used for ALL backend DB access (ADR-009 violated)
+Every backend query ran through a single service_role client — RLS disabled and full
+DB privileges on all tables, contradicting ADR-009 ("only /checkout uses service_role").
+Any future endpoint forgetting an authz check would silently bypass RLS.
+
+- `backend/app/config.py`: added `supabase_anon_key` setting.
+- `backend/app/database.py`: three clients — `get_supabase()` (anon key, RLS-enforced),
+  `get_user_supabase()` (anon key + caller JWT, RLS-enforced as that user), and
+  `get_service_role_supabase()` (**service_role confined to the /checkout transaction
+  path only**, per ADR-009).
+- `backend/app/utils/security.py`: added `get_access_token` dependency (raw bearer
+  token) used to attach the caller JWT; the `/auth/v1/user` apikey now uses the anon
+  key instead of service_role.
+- `backend/app/routes/checkout.py`: injects user client (reads) + service_role client
+  (transaction RPCs) instead of one service_role client.
+- `backend/app/routes/admin.py`: all endpoints now use the RLS-enforced user client;
+  `_assert_admin` reads the caller's own profile row through RLS (`is_admin()` policy).
+  Approve/reject now call the new `admin_set_profile_role` SECURITY DEFINER RPC and
+  order-cancel calls `admin_cancel_order` (both self-guarded by `is_admin()` inside).
+- `supabase/migrations/004_security_hardening.sql`: added `admin_set_profile_role` +
+  `admin_cancel_order` (SECURITY DEFINER, `SET search_path = public`, granted to
+  `authenticated` only — REVOKEd from public/anon).
+- Verified: `service_role` grep now confined to `config.py` / `database.py` /
+  `routes/checkout.py`.
+
+#### Fixed: C2 — rate limiting disabled + FastAPI debug mode on
+The only `.env` had `DEBUG=true`, which skipped SlowAPIMiddleware entirely — combined
+with no-payment WhatsApp fulfillment, an authenticated attacker could script `/checkout`
+to drain inventory with fake pending orders.
+
+- `backend/app/rate_limit.py` (new): per-user limiter key from the JWT `sub` claim
+  (falls back to client IP) with a `60/minute` default safety net.
+- `backend/app/main.py`: `SlowAPIMiddleware` is now always added (the `if not
+  settings.debug` gate was removed); `RateLimitExceeded` handled with a clean response.
+- `backend/app/routes/checkout.py`: explicit `@limiter.limit("10/minute")` per user.
+- `backend/.env` and `backend/.env.example`: `DEBUG=false`.
+- Verified: app boots with middleware present; debug off.
+
+#### Fixed: C3 — check-then-act stock validation (TOCTOU → 500)
+`create_order` validated stock outside a transaction, so concurrent checkouts could
+pass the pre-check and fail mid-insert with a 500.
+
+- `supabase/migrations/004_security_hardening.sql`: rewrote `create_order` (same
+  signature; service_role-only grant preserved) to lock product rows
+  `SELECT ... FOR UPDATE` and re-check availability **inside** the transaction. If any
+  item is short/unknown it returns a structured `{commit:false, insufficient_stock:true,
+  out_of_stock:[{product_id,title,available,requested}]}` — no order inserted, nothing
+  rolled back; otherwise inserts order + items then decrements via the unchanged atomic
+  `decrement_stock_inventory` and returns `{commit:true, order_id, readable_order_id}`.
+- `backend/app/adapters/stock.py`: `InsufficientStockError` moved here (shared by
+  order_intake + txn).
+- `backend/app/adapters/txn.py`: maps the structured RPC result → `InsufficientStockError`
+  → HTTP 400 with `out_of_stock[]`; true failures stay a generic 500 (no detail leak).
+- `backend/app/adapters/order_intake.py`: the pre-check remains only as a UX hint.
+- Verified against the live DB (rolled-back tests): structured result correct, no double
+  decrement, success path intact.
+
+#### Fixed: H1 — email confirmation / auto-confirm signup
+`supabase/config.toml`: `enable_confirmations = true`, `enable_autoconfirm = false`.
+The `handle_new_user` trigger keeps `wholesale_pending` for company-name signups
+(ADR-006 self-serve approval flow); the frontend login page already handles the
+confirmation flow (`identities.length === 0` → "check your email"). No frontend code
+change needed.
+- **Manual dashboard action remains:** hosted Supabase auth settings are not SQL-visible
+  on this project version — email confirmation must be flipped in the dashboard
+  (Authentication → Providers/Email). 3 current users are already email-confirmed.
+
+#### Fixed: H2 — checkout error handler leaks internal exception details
+`backend/app/routes/checkout.py`: unhandled exceptions now return a fixed generic 500
+body (no `str(e)`); full detail goes to `logger.exception` server-side. Known RPC
+failures are already mapped to clean 400s (C3). Test added asserting the 500 body is
+generic.
+
+#### Fixed: H3 — no upper bounds / depth guards on checkout input
+`backend/app/schemas/order.py`: `product_id` must be a valid UUID (field_validator);
+`quantity: int = Field(gt=0, le=1000)`; `items: list[CheckoutItem] =
+Field(min_length=1, max_length=50)`. Migration 004 adds defense-in-depth RPC guards
+(empty/NULL `p_items` → RAISE; `v_quantity <= 0` → RAISE) and
+`CHECK (quantity_ordered > 0)` on `order_items`. 422 tests added for empty items,
+>50 items, quantity 0 / >1000, non-UUID product_id.
+
+#### Fixed: H4 — stock functions accept negative/invalid steps; no CHECKs
+`supabase/migrations/004_security_hardening.sql`:
+- `IF steps <= 0 THEN RETURN FALSE` guard on BOTH `decrement_stock_inventory` and
+  `increment_stock_inventory` (applied migrations 001/002 were never edited).
+- `CHECK (quantity_ordered > 0)` and `CHECK (unit_price_applied > 0)` on
+  `public.order_items` (live data verified min qty=1, min price=120.00).
+- Applied live via `security_hardening_c1_c3_h3_h4`; functions + constraints verified
+  present.
+
+#### Verified (Round 1)
+- Backend `pytest -q`: **83 passed** at close of Round 1.
+- Frontend `npx tsc --noEmit`: exit 0 (no frontend changes in Round 1).
+- Live DB migration applied; `security-report.md` findings C1–C4 / H1–H4 all closed.
+
+### Security Hardening — Round 2 (M1–M8, L1–L9)
+
+#### Frontend (Next.js)
+- **M1 (CSP headers)** — `frontend/next.config.mjs` `headers()` now emits a CSP
+  (`default-src 'self'`, `connect-src 'self' https://*.supabase.co <API_URL>`,
+  `frame-ancestors 'none'`, etc.) plus `X-Frame-Options: DENY`,
+  `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`.
+- **M2 (secure cookie)** — `src/utils/supabase/client.ts` appends `; Secure` to the
+  session cookie when the page is served over HTTPS (dev http://localhost unaffected).
+- **L3 (auth-gated routes)** — `src/middleware.ts` redirects unauthenticated users on
+  `/dashboard` and `/receipts` to `/login`.
+- **L8 (image URL validation)** — `components/product-form.tsx` rejects pasted image
+  URLs that do not start with `https://` (toast + abort). Products are inserted via RLS
+  directly, so no backend endpoint change was applicable.
+
+#### Backend (FastAPI)
+- **M3 (admin rate limits)** — `@limiter.limit("30/minute")` on approve / reject /
+  order-status PATCH / products-import / broadcast-update / expire-orders; endpoints now
+  declare `request: Request` (required by slowapi).
+- **M4 (order expiry + open-order cap)** — POST `/admin/expire-orders` calls RPC
+  `expire_pending_orders` (new migration `005_expire_pending_orders.sql`,
+  SECURITY DEFINER + `is_admin()` guard + `FOR UPDATE SKIP LOCKED` + per-item restock);
+  `order_intake.py` enforces `OPEN_ORDER_CAP = 20` pending orders per user (HTTP 400).
+- **M5 (PII minimization)** — `notification.py` broadcasts only
+  `{order_id, status}` via `send_to_user` (no customer name / totals).
+- **M6 (WS auth via subprotocol)** — `ws.py` reads the token from
+  `Sec-WebSocket-Protocol`; missing/invalid → close 4001. Frontend has no WS client.
+- **M8 (CORS)** — `main.py` `parse_cors_origins()` rejects `*` and empty lists;
+  methods restricted to `GET, POST, PATCH, PUT, DELETE`, headers to
+  `Authorization, Content-Type`.
+- **L4** — dead `check_role()` removed from `security.py`.
+- **L5 (WS role from DB)** — `ws.py` resolves the role via an RLS-enforced user client
+  (no `service_role`); defaults to `retail`.
+- **L6 (CSV import)** — `row_validator.py` enforces `items_per_lot >= 1` and
+  `minimum_wholesale_lots >= 1`; imports > 5 MB rejected with 413.
+- **L7 (WhatsApp sanitization)** — `whatsapp.py` `_clean()` collapses whitespace /
+  control chars in customer name and item titles (injection resistance).
+- **L9 (log hygiene)** — `security.py` logs auth-server responses by status code only;
+  user/sub ids truncated to 8 chars.
+
+#### Security decisions
+- **M7 (sequential readable_order_id)** — WON'T-FIX: RLS isolates rows and
+  `/receipts/{readable_order_id}` validates ownership server-side (ADR-004); opaque IDs
+  add no security under RLS.
+- **L1 (`is_admin()` SECURITY DEFINER)** — WON'T-FIX: it is invoked inside profiles RLS
+  policies; switching to INVOKER reintroduces the 42P17 recursion the helper was built to
+  fix.
+- **L2 (leaked-password protection)** — MANUAL dashboard action (no `auth.config` table
+  exists to set via SQL).
+
+#### Verified (2026-08-01 23:30 UTC)
+- Backend `pytest -q`: **99 passed** (83 at close of Round 1; +16 tests for M3/M4/M5/M6/M8/L6/L7).
+- Frontend `npx tsc --noEmit`: exit 0 (no ESLint config exists; `next lint` is interactive).
+- Live DB: migration `expire_pending_orders_m4` applied; `is_admin()` guard verified
+  (`Admin access required` without admin context); destructive expiry NOT run (12 real
+  pending orders, some >24h old).
+- `service_role` confined to `config.py` / `database.py` / `routes/checkout.py`.
+- CORS preflight live-checked: unknown origins rejected, methods/headers restricted.
 
 ### Security & Database (Supabase)
 
@@ -94,7 +250,12 @@ indexes have not been exercised yet at current data scale; expected and correct 
 
 #### Operations / dashboard actions (no code)
 - Enable **Leaked password protection** in Supabase Auth settings. `auth.config` does
-  not exist in this project, so it cannot be set via SQL.
+  not exist in this project, so it cannot be set via SQL. (Finding L2.)
+- Enable **Email confirmation** for the hosted project (H1): auth settings are not
+  SQL-visible on this version — flip it in the dashboard
+  (Authentication → Providers/Email). The repo `supabase/config.toml` already has
+  `enable_confirmations = true` / `enable_autoconfirm = false`; 3 current users are
+  already email-confirmed.
 - Dismiss `authenticated_security_definer_function_executable` for `public.is_admin()`
   (lint ID `0029_authenticated_security_definer_function_executable`). Expected for the
   SECURITY DEFINER RLS pattern; the function returns only the caller's own admin flag.
@@ -260,6 +421,59 @@ Reconciled ADR-003 for the admin dashboard (the largest client-side read surface
   the dashboard as the reference case for interactive read surfaces.
 
 Verified: `tsc --noEmit` exit 0; `next build` passes.
+
+### Product Images (Upload + URL)
+#### Added: hybrid product images — upload from device or paste a URL
+Merchants can now add product photos from their phone/storage, not only by pasting
+external image URLs. Both inputs merge into the existing `products.images TEXT[]`
+column (URL strings), so the display layer (cards, detail gallery, checkout) is unchanged.
+
+- NEW `supabase/migrations/003_product_images_storage.sql`: `product-images` public
+  Storage bucket (5 MB / image, allowlisted MIME types) + storage RLS policies —
+  admin-only INSERT/UPDATE/DELETE gated on `public.is_admin()`. No SELECT policy:
+  public buckets already serve files by URL without RLS, and a broad SELECT would
+  enable anonymous bucket listing (advisor lint `public_bucket_allows_listing`).
+- `components/product-form.tsx`: added a multi-file upload zone (`accept` allowlist,
+  5 MB guard, client-side MIME checks, removable chips). Files upload to Storage
+  (UUID paths, `getPublicUrl`) during submit; uploaded URLs are appended after any
+  pasted URLs. The existing URL textarea remains as the "add by URL" alternative.
+- Backend: no changes — product writes stay client-side via supabase-js + RLS.
+
+Applied live to the Supabase project (bucket + policies). `tsc --noEmit` exit 0,
+`next build` passes.
+
+### Dashboard & Storefront UX
+
+#### Added: out-of-stock tag in the dashboard
+The products table's Stock column rendered a bare number even for zero-stock
+products. Rows with `available_stock_lots = 0` now show a destructive "Out of Stock"
+badge (in `sections/products.tsx`); in-stock products keep the numeric count.
+
+#### Added: user-friendly specifications editor (no more JSON)
+The add/edit product form required pasting specs as raw JSON
+(`hardware_specifications` textarea validated with `JSON.parse`). Merchants shouldn't
+write JSON, so the form now uses a dynamic key/value row editor in `product-form.tsx`:
+
+- Each row is a "Name" + "Value" input pair with add/remove buttons.
+- On save, rows build the `hardware_specifications` object; values are kept as text
+  unless they parse as JSON (so numeric specs stay numbers and nested CSV-imported
+  objects round-trip). Rows with an empty name or empty value are ignored.
+- On edit, the existing object is converted back into rows.
+- A value with an empty name blocks submit with a friendly message (no silent data
+  loss). Existing flat specs in the live DB convert cleanly.
+
+#### Changed: admins can no longer add to cart
+Admins manage inventory, they don't buy from their own storefront. The catalog home
+page already hid the button; the gaps were the product detail page and the navbar:
+
+- `app/products/[id]/page.tsx`: fetches the profile role server-side (same pattern as
+  home) and passes `isAdmin` to the detail content.
+- `product-detail-content.tsx`: both Add-to-Cart buttons (desktop + mobile bottom bar)
+  are hidden for admins; related-product `ProductCard`s get `isAdmin` too.
+- `components/navbar.tsx`: the cart icon is hidden for admins (they can no longer fill
+  a cart).
+
+No backend or schema changes; `tsc --noEmit` exit 0, `next build` passes.
 
 ### Notes / Known Items
 

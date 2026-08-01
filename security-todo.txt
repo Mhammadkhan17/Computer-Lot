@@ -1,0 +1,413 @@
+Security Hardening — Implementation Plan (Critical + High findings)
+=====================================================================
+Project: Hybrid Computer Lot Liquidation Platform (Next.js 15 + FastAPI + Supabase)
+Source: security-report.md (2026-08-01)
+Rules: AGENTS.md (RLS never bypassed; atomic decrement_stock_inventory never
+removed/bypassed; service_role restricted to /checkout per ADR-009; ADR-002
+atomic all-or-nothing checkout).
+
+Priority order: C1 → C2 → C3 → H1 → H2 → H3 → H4 (critical first, then high,
+each ordered so no later fix depends on a reverted earlier one).
+
+Each item tracked with status: [ ] = pending, [~] = in progress, [x] = done.
+
+----------------------------------------------------------------------------
+C1. service_role key used for ALL backend DB access (ADR-009 violated)
+----------------------------------------------------------------------------
+Files:
+- backend/app/config.py
+  * Add `supabase_anon_key: str` setting (RLS-enforced client key).
+- backend/app/database.py
+  * `get_supabase()` -> create_client(url, anon_key)  [RLS-enforced, no session]
+  * `get_user_supabase()` -> anon-key client + caller JWT attached via
+    `client.postgrest.auth(token)` [RLS-enforced as the authenticated user]
+  * `get_service_role_supabase()` -> create_client(url, service_role_key)
+    [ONLY for /checkout create_order + decrement/increment RPCs]
+- backend/app/utils/security.py
+  * Add `get_access_token` dependency (raw bearer token) used by
+    get_user_supabase. Switch the /auth/v1/user apikey from service_role to
+    anon key (service_role must not be used outside /checkout).
+- backend/app/routes/checkout.py
+  * Inject `get_user_supabase` (reads) + `get_service_role_supabase`
+    (transaction) instead of a single service_role client.
+- backend/app/routes/admin.py
+  * Use `get_user_supabase` on every endpoint. `_assert_admin` keeps its
+    profile-role read but now runs through RLS (user reads own row; is_admin
+    policy gates admin visibility).
+  * Approve/reject: replace direct `profiles.update({role})` with
+    `admin_set_profile_role` SECURITY DEFINER RPC (checks is_admin() inside;
+    profiles.role column is not API-writable via column grants).
+  * Cancel order: replace item read + per-item `increment_stock_inventory`
+    loop + status update with `admin_cancel_order` SECURITY DEFINER RPC
+    (admin-guarded, atomic restock + status change). Non-cancel status
+    updates stay as RLS-gated `orders.update`.
+- backend/app/adapters/order_intake.py
+  * Accept the user client for reads and the service_role client for the
+    transaction RPC.
+- supabase/migrations/004_security_hardening.sql (NEW)
+  * Add `admin_set_profile_role` + `admin_cancel_order` SECURITY DEFINER
+    functions, granted to authenticated only (self-guarded by is_admin()).
+- backend/tests/test_checkout.py, test_admin.py, conftest.py
+  * Override the new dependencies; update cancel-order test to the RPC.
+
+Status: [x]
+
+----------------------------------------------------------------------------
+C2. Rate limiting disabled + FastAPI debug mode enabled
+----------------------------------------------------------------------------
+Files:
+- backend/.env  -> DEBUG=false (never ship DEBUG=true)
+- backend/.env.example -> DEBUG=false
+- backend/app/config.py -> debug already defaults False; keep.
+- backend/app/main.py
+  * Always add SlowAPIMiddleware (remove `if not settings.debug` gate).
+  * Custom limiter key function: JWT `sub` from Authorization header
+    (per-user), fallback to client IP. `default_limits` modest safety net.
+  * Explicit `@limiter.limit("10/minute")` on POST /checkout (per-user).
+  * Global exception handler returning a fixed generic 500 JSON (no str(e));
+    log full detail server-side; WS-safe branch.
+- backend/tests/conftest.py
+  * Disable the limiter in tests to avoid flaky shared-bucket 429s.
+- backend/tests/test_checkout.py
+  * Add a test that the checkout route is rate-limited per user.
+
+Status: [x]
+
+----------------------------------------------------------------------------
+C3. Stock validation check-then-act outside transaction (TOCTOU -> 500)
+----------------------------------------------------------------------------
+Files:
+- supabase/migrations/004_security_hardening.sql (NEW)
+  * Rewrite `create_order` (same signature, existing service_role-only grant
+    preserved):
+      - validate p_items non-empty and each quantity > 0 (RAISE otherwise)
+      - lock product rows `SELECT ... FOR UPDATE` and re-check availability
+        INSIDE the transaction
+      - if any item short/unknown -> RETURN structured result
+        `{commit:false, insufficient_stock:true, out_of_stock:[{product_id,
+        title, available, requested}]}` (no order inserted, nothing rolled back)
+      - otherwise insert order + order_items, then decrement each via
+        `decrement_stock_inventory` (unchanged atomic guard) and return
+        `{commit:true, order_id, readable_order_id}`
+- backend/app/adapters/stock.py
+  * Move `InsufficientStockError` here (shared by order_intake + txn).
+- backend/app/adapters/txn.py
+  * Inspect RPC result: if `insufficient_stock` -> raise
+    InsufficientStockError(out_of_stock mapped to StockErrorItem); generic
+    500 otherwise (no detail leak).
+- backend/app/adapters/order_intake.py
+  * Keep pre-check ONLY as a UX hint (never source of truth).
+- backend/tests/test_adapters_txn.py, test_checkout.py
+  * Add coverage: RPC returning insufficient_stock -> 400 out_of_stock[];
+    existing generic-500 tests kept (behavior unchanged for true failures).
+
+Status: [x]
+
+----------------------------------------------------------------------------
+H1. Email confirmation / auto-confirm signup enabled
+----------------------------------------------------------------------------
+Files:
+- supabase/config.toml
+  * `enable_confirmations = true`, `enable_autoconfirm = false`.
+- Hosted Supabase project (ybwbwllmryjdfqvfpcik): auth settings are NOT in a
+  SQL-visible table on this version; must be flipped in the dashboard
+  (Authentication -> Providers/Email). Flag in final report.
+- Trigger `handle_new_user` in policies.sql: KEEP wholesale_pending for
+  company_name signups (ADR-006 self-serve flow). Frontend login page
+  already handles email-confirmation (signup with 0 identities -> "check
+  your email"), and the admin approvals dashboard filters
+  `role = wholesale_pending`, so changing to retail would break onboarding.
+  Email confirmation now gates identities before the wholesale queue.
+- No frontend code change needed (verified login/page.tsx:51-55).
+
+Status: [x]
+
+----------------------------------------------------------------------------
+H2. Checkout error handler leaks internal exception details
+----------------------------------------------------------------------------
+Files:
+- backend/app/routes/checkout.py
+  * Generic 500 body (no str(e)); `logger.exception` keeps full detail
+    server-side.
+  * Known RPC failures already mapped: insufficient_stock -> 400 via
+    InsufficientStockError (C3). Invalid UUID / oversized values now rejected
+    at 422 by Pydantic (H3). Unknown product in RPC -> 400 out_of_stock.
+- backend/tests/test_checkout.py
+  * Add test asserting 500 body is generic (no internal text).
+
+Status: [x]
+
+----------------------------------------------------------------------------
+H3. No upper bound / depth guards on checkout input
+----------------------------------------------------------------------------
+Files:
+- backend/app/schemas/order.py
+  * `CheckoutItem.product_id`: validate UUID format (str kept, validated via
+    field_validator so DB keys still match string maps).
+  * `quantity: int = Field(gt=0, le=1000)`.
+  * `CheckoutRequest.items: list[CheckoutItem] = Field(min_length=1,
+    max_length=50)`.
+- supabase/migrations/004_security_hardening.sql (NEW)
+  * create_order guards: `p_items` NULL/empty RAISE; `v_quantity <= 0`
+    RAISE (defense-in-depth behind Pydantic).
+  * `ALTER TABLE order_items ADD CONSTRAINT CHECK (quantity_ordered > 0)`
+    (same migration also adds unit_price_applied CHECK per H4).
+- backend/tests/test_checkout.py
+  * Add 422 tests for empty items, >50 items, quantity 0 / >1000, non-UUID
+    product_id.
+
+Status: [x]
+
+----------------------------------------------------------------------------
+H4. decrement_stock_inventory accepts negative/invalid steps; no CHECKs
+----------------------------------------------------------------------------
+Files:
+- supabase/migrations/004_security_hardening.sql (NEW)
+  * `IF steps <= 0 THEN RETURN FALSE` guard in decrement_stock_inventory AND
+    increment_stock_inventory (never edit applied 001/002 files).
+  * `CHECK (quantity_ordered > 0)` and `CHECK (unit_price_applied > 0)` on
+    public.order_items (live data verified min qty=1, min price=120.00).
+  * create_order already guards v_quantity <= 0 and empty p_items (H3).
+- Live DB: apply migration via supabase MCP apply_migration (project linked);
+  record result.
+
+Status: [x]
+
+----------------------------------------------------------------------------
+Cross-cutting
+----------------------------------------------------------------------------
+- Migration file: supabase/migrations/004_security_hardening.sql (single new
+  numbered migration containing C1 RPCs + C3 create_order rewrite + H3/H4
+  guards/constraints).
+- Verification commands:
+  * Backend: cd backend && .venv/bin/pytest -q  (pytest.ini present)
+  * Frontend typecheck: cd frontend && npx tsc --noEmit  (package.json has
+    lint=next lint; no dedicated typecheck script, run tsc --noEmit)
+  * Note: frontend has no code changes expected (H1 verified compatible);
+    run tsc to confirm nothing else broke.
+
+----------------------------------------------------------------------------
+COMPLETION LOG (2026-08-01)
+----------------------------------------------------------------------------
+C1 DONE. config.py + database.py (3 clients) + security.py (get_access_token,
+anon-key auth apikey) + checkout/admin routes + order_intake (2 clients) +
+migration 004 admin RPCs. Tests: test_admin/test_checkout updated + passing.
+C2 DONE. rate_limit.py (per-user key, 10/min explicit checkout, 60/min default
+safety net) + main.py (middleware always on, generic 500 handler) + .env /
+.env.example DEBUG=false. Verified app boots, middleware present, debug off.
+C3 DONE. Migration 004 rewrote create_order (FOR UPDATE lock + typed
+insufficient_stock result). txn.py maps result -> InsufficientStockError ->
+400 out_of_stock[]. Verified against live DB (rolled-back tests): structured
+result correct, no double decrement, success path intact.
+H1 DONE (local). config.toml confirmations on, autoconfirm off. Frontend
+login already handles confirmation flow (identities.length===0). Trigger
+kept (wholesale_pending) to preserve ADR-006 approvals flow. HOSTED auth
+settings must be flipped in Supabase dashboard (no SQL-accessible config on
+this version; 3 users currently all email-confirmed).
+H2 DONE. checkout.py generic 500 (no str(e)); test asserts no leak.
+H3 DONE. Pydantic: UUID format, quantity le=1000, items 1..50; RPC guards;
+order_items CHECK (quantity_ordered > 0). 422 tests added + passing.
+H4 DONE. Migration 004: steps<=0 guards on decrement/increment; CHECK
+(quantity_ordered > 0) + CHECK (unit_price_applied > 0). Applied to live DB
+via supabase MCP apply_migration (verified functions + constraints present).
+
+VERIFICATION RESULTS:
+- Backend: cd backend && .venv/bin/pytest -q -> 83 passed, 164 warnings
+- Frontend: cd frontend && npx tsc --noEmit -> exit 0 (no frontend changes)
+- Live DB migration applied: security_hardening_c1_c3_h3_h4
+
+----------------------------------------------------------------------------
+MEDIUM SEVERITY — Security Hardening Round 2 (M1–M8)
+----------------------------------------------------------------------------
+Rules: same as Round 1 (never bypass decrement/increment stock functions;
+atomic all-or-nothing checkout ADR-002; RLS never weakened; service_role
+confined to config.py/database.py/routes/checkout.py; do not edit migrations
+001–004). New migrations go in supabase/migrations/005_*.sql.
+
+M1. Missing security headers / Content-Security-Policy
+Files:
+- frontend/next.config.mjs
+  * Add async headers(): Content-Security-Policy =
+      default-src 'self';
+      script-src 'self' 'unsafe-inline'          (Next.js bootstrap inline scripts)
+      style-src 'self' 'unsafe-inline' https://fonts.googleapis.com (recharts inline styles)
+      img-src 'self' data: https:                (product images incl. Supabase storage)
+      font-src https://fonts.gstatic.com
+      connect-src 'self' https://*.supabase.co <NEXT_PUBLIC_API_URL>
+      frame-ancestors 'none'; base-uri 'self'; form-action 'self'
+    plus X-Frame-Options: DENY, Referrer-Policy: no-referrer,
+    X-Content-Type-Options: nosniff.
+  * connect-src covers Supabase JS client + FastAPI (checkout/admin); wa.me
+    opens via top-level navigation (not connect-src); Supabase realtime is
+    disabled (config.toml) so no wss:// needed. Google Fonts preconnect in
+    layout.tsx covered by style/font-src.
+  * Verify: node ESM import of next.config.mjs resolves headers() fn;
+    tsc --noEmit (config-only change).
+Status: [x]
+
+M2. Session cookie missing Secure flag
+Files:
+- frontend/src/utils/supabase/client.ts
+  * setAll(): append `; Secure` when window.location.protocol === "https:"
+    (computed once per batch); keep http://localhost dev working.
+Status: [x]
+
+M3. Admin endpoints not rate-limited per user
+Files:
+- backend/app/routes/admin.py
+  * Import limiter from app.rate_limit; add @limiter.limit("30/minute") on
+    POST approve/reject, PATCH order status, POST products/import,
+    POST products/broadcast-update, and the new M4 POST expire-orders.
+    GET template stays unlimited (read-only).
+- backend/tests/test_admin.py
+  * Add per-user rate-limit test (re-enable limiter like the checkout test;
+    31st request -> 429).
+Status: [x]
+
+M4. Order spam / stale pending orders never expire
+Files:
+- supabase/migrations/005_expire_pending_orders.sql (NEW)
+  * expire_pending_orders(p_older_than_hours INT) SECURITY DEFINER with
+    is_admin() guard (default 24h); SELECT ... FOR UPDATE SKIP LOCKED over
+    expired pending_whatsapp orders; per-item restock via
+    increment_stock_inventory; mark cancelled; RETURN {expired: N}.
+    REVOKE public/anon, GRANT authenticated (same pattern as 004 admin RPCs).
+  * Partial index idx_orders_status_created_at (status, created_at) WHERE
+    status = 'pending_whatsapp'.
+- backend/app/routes/admin.py
+  * POST /admin/expire-orders (body {older_than_hours}) behind _assert_admin,
+    calls expire_pending_orders RPC via the user client; returns {expired: N}.
+- backend/app/adapters/order_intake.py
+  * OPEN_ORDER_CAP = 20; _assert_open_order_cap(supabase, user_id) counts the
+    user's open pending_whatsapp orders via RLS user client; raise HTTP 400
+    with a clear message if >= 20. Called after profile fetch in create().
+  * Rationale: create_order RPC is service_role-only (only our backend calls
+    it), so the FastAPI pre-check is authoritative; no RPC change needed.
+- backend/tests/test_checkout.py, test_admin.py
+  * Cap unit test + checkout route test; expire endpoint test.
+Status: [x]
+
+M5. WebSocket broadcast leaks order PII
+Files:
+- backend/app/adapters/notification.py
+  * broadcast_order_update: use manager.send_to_user(order_data["user_id"],
+    "order_status_update", {order_id, status}) — minimal payload, no
+    customer_name/total_amount.
+- backend/app/adapters/order_intake.py
+  * Include user_id in the broadcast_order_update call dict.
+- backend/tests/test_adapters_notification.py
+  * Update to send_to_user signature/assertions.
+Status: [x]
+
+M6. JWT passed as WebSocket query parameter (logged in server logs)
+Files:
+- backend/app/routes/ws.py
+  * Read token from Sec-WebSocket-Protocol header (first subprotocol) instead
+    of Query(...). Reject with close code 4001 if absent/invalid.
+- backend/app/utils/ws_manager.py
+  * connect() accepts optional subprotocol passed to ws.accept().
+- backend/tests/test_ws_endpoint.py
+  * Use Sec-WebSocket-Protocol header; invalid/missing token -> 4001.
+  * Note: frontend has NO WebSocket client code (verified) — backend-only
+    change; document in report.
+Status: [x]
+
+M7. Sequential readable_order_id (BIGSERIAL)
+- WON'T-FIX (documented rationale): RLS isolates rows (own orders + admin);
+  /receipts/{readable_order_id} already validates ownership server-side
+  (ADR-004). Converting to opaque ids requires schema + receipt URL changes
+  with no added security under RLS.
+Status: [x] (WON'T-FIX)
+
+M8. CORS hardening
+Files:
+- backend/app/main.py
+  * Validate cors_origins at startup: non-empty list, reject "*" when
+    allow_credentials=True. Restrict allow_methods to ["GET","POST","PATCH",
+    "PUT","DELETE"] (frontend uses GET/POST/PATCH/DELETE) and allow_headers
+    to ["Authorization","Content-Type"].
+- backend/tests/ (new or conftest)
+  * Unit test for the cors_origins validation helper.
+Status: [x]
+
+----------------------------------------------------------------------------
+LOW SEVERITY — Security Hardening Round 2 (L1–L9)
+----------------------------------------------------------------------------
+
+L1. is_admin() executable by any authenticated user
+- WON'T-FIX (documented trade-off): is_admin() is SECURITY DEFINER because it
+  is used INSIDE profiles RLS policies; converting to SECURITY INVOKER would
+  make the policy query subject to profiles RLS -> infinite recursion. STABLE
+  + SECURITY DEFINER with pinned search_path is the standard Supabase pattern.
+Status: [x] (WON'T-FIX)
+
+L2. Leaked-password protection disabled
+- NOT fixable in code: Supabase dashboard setting (Authentication -> Security
+  -> Prevent leaked passwords / Password strength). Manual dashboard action.
+Status: [~] (MANUAL)
+
+L3. middleware.ts refreshes session but has no route protection
+Files:
+- frontend/src/middleware.ts
+  * After createClient(), if pathname starts with /dashboard or /receipts and
+    supabase.auth.getUser() returns no user -> redirect to /login (defense-
+    in-depth; keep existing per-page checks). Public routes (/login, /confirm,
+    /, /products) untouched.
+Status: [x]
+
+L4. Dead code check_role() with insecure default
+Files:
+- backend/app/utils/security.py
+  * Delete check_role (verified: no imports anywhere).
+Status: [x]
+
+L5. WS role from JWT always 'authenticated'
+Files:
+- backend/app/routes/ws.py
+  * On connect, fetch the caller's profile role via the user client
+    (get_user_supabase(token)) instead of the JWT claim; default "retail" on
+    failure. Aligns with M6.
+Status: [x]
+
+L6. CSV import: no upload size limit; integer fields lack lower bounds
+Files:
+- backend/app/adapters/row_validator.py
+  * Enforce items_per_lot >= 1 and minimum_wholesale_lots >= 1 (validation
+    errors instead of accepting 0/negative).
+- backend/app/routes/admin.py
+  * import_products: reject files > 5 MB with HTTP 413.
+- backend/tests/test_adapters_csv.py
+  * Add lower-bound tests.
+Status: [x]
+
+L7. User-controlled fields flow into WhatsApp message unvalidated
+Files:
+- backend/app/adapters/whatsapp.py
+  * _clean(): collapse whitespace/control characters (split/join) for
+    customer_name and item titles before building the message.
+- backend/tests/test_adapters_whatsapp.py
+  * Add control-char/newline sanitization test.
+Status: [x]
+
+L8. Product image URLs not validated
+Files:
+- frontend/src/components/product-form.tsx
+  * Validate pasted image_urls: each must start with https:// or be dropped
+    with an error. Frontend-only: product create/update writes directly to
+    Supabase via RLS (no backend endpoint exists) — documented.
+Status: [x]
+
+L9. Logging leaks (auth-server response bodies, full user ids)
+Files:
+- backend/app/utils/security.py
+  * Remove resp.text[:200] from warnings (log status code only); truncate
+    user/sub ids in info logs.
+Status: [x]
+
+----------------------------------------------------------------------------
+Cross-cutting (Round 2)
+----------------------------------------------------------------------------
+- New migration: supabase/migrations/005_expire_pending_orders.sql.
+- Verify after all changes: service_role grep confined to
+  config.py/database.py/routes/checkout.py; conftest limiter disable intact;
+  backend pytest -q; frontend tsc --noEmit; next.config.mjs ESM import.
