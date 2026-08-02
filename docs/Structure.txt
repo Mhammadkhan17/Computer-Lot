@@ -8,90 +8,140 @@ computer-lot-liquidation/
 │   │   │   ├── globals.css                   # Tailwind v4 theme + fonts
 │   │   │   ├── layout.tsx                    # Root layout + providers
 │   │   │   ├── page.tsx                      # Home / Product Catalog
-│   │   │   ├── not-found.tsx                 # Custom 404
 │   │   │   ├── catalog-grid.tsx              # Client-side search + grid
+│   │   │   ├── not-found.tsx                 # Custom 404
+│   │   │   ├── login/
+│   │   │   │   └── page.tsx                  # Auth & Registration
 │   │   │   ├── checkout/
-│   │   │   │   ├── page.tsx                  # Checkout review page
-│   │   │   │   └── checkout-page.tsx         # Checkout client component
-│   │   │   ├── login/page.tsx                # Auth & Registration
+│   │   │   │   ├── page.tsx                  # Checkout review route (force-dynamic)
+│   │   │   │   ├── checkout-page.tsx         # Checkout client component (use client)
+│   │   │   │   └── error.tsx                 # Checkout error boundary
+│   │   │   ├── products/[id]/
+│   │   │   │   ├── page.tsx                  # Product detail route (server, fetches role)
+│   │   │   │   └── product-detail-content.tsx# Gallery/lightbox/zoom client component
 │   │   │   ├── receipts/[id]/
-│   │   │   │   ├── page.tsx                  # Secure order receipt (server)
+│   │   │   │   ├── page.tsx                  # Secure order receipt (server, ADR-004)
 │   │   │   │   └── receipt-content.tsx       # Receipt client component
-│   │   │   ├── dashboard/
-│   │   │   │   ├── page.tsx                  # Admin dashboard (server)
-│   │   │   │   └── dashboard-content.tsx     # Dashboard client component
-│   │   │   └── api/                          # Optional Next.js API routes
+│   │   │   └── dashboard/                    # Admin dashboard (role-gated)
+│   │   │       ├── page.tsx                  # Admin dashboard route (server, ADR-003)
+│   │   │       ├── dashboard-content.tsx     # Dashboard client shell
+│   │   │       ├── dashboard-provider.tsx    # Realtime/provider wrapper
+│   │   │       ├── sidebar.tsx               # Dashboard sidebar nav
+│   │   │       └── sections/
+│   │   │           ├── overview.tsx          # KPI overview section
+│   │   │           ├── orders.tsx            # Orders table section
+│   │   │           ├── approvals.tsx         # Wholesale approval section
+│   │   │           └── products.tsx          # Products table + CSV import section
 │   │   ├── components/
 │   │   │   ├── ui/                           # Shadcn/ui components
-│   │   │   │   ├── button.tsx
+│   │   │   │   ├── avatar.tsx
 │   │   │   │   ├── badge.tsx
+│   │   │   │   ├── button.tsx
 │   │   │   │   ├── card.tsx
-│   │   │   │   └── input.tsx
+│   │   │   │   ├── chart.tsx
+│   │   │   │   ├── dialog.tsx
+│   │   │   │   ├── dropdown-menu.tsx
+│   │   │   │   ├── input.tsx
+│   │   │   │   ├── separator.tsx
+│   │   │   │   ├── sheet.tsx
+│   │   │   │   ├── skeleton.tsx
+│   │   │   │   └── table.tsx
+│   │   │   ├── sections/                     # Marketing/homepage sections
+│   │   │   │   ├── hero.tsx
+│   │   │   │   ├── features.tsx
+│   │   │   │   ├── how-it-works.tsx
+│   │   │   │   └── wholesale.tsx
 │   │   │   ├── navbar.tsx
+│   │   │   ├── profile-dropdown.tsx          # User role-aware profile menu
+│   │   │   ├── site-footer.tsx
 │   │   │   ├── product-card.tsx
 │   │   │   ├── search-bar.tsx
-│   │   │   ├── cart-drawer.tsx
-│   │   │   └── checkout-button.tsx           # WhatsApp redirection logic
+│   │   │   ├── cart-drawer.tsx               # Zustand cart drawer
+│   │   │   ├── checkout-button.tsx           # POST /checkout + WhatsApp redirect
+│   │   │   └── product-form.tsx              # Add/edit product dialog + image upload
 │   │   ├── hooks/
-│   │   │   └── useCart.ts                    # Zustand cart store (with persist)
+│   │   │   ├── useCart.ts                    # Zustand cart store (with persist)
+│   │   │   ├── useUserRole.ts                # Role from profiles (auth-aware)
+│   │   │   ├── useAdminDashboard.ts          # Dashboard data module
+│   │   │   └── useWebSocket.ts               # Realtime/WebSocket subscription
 │   │   ├── lib/
-│   │   │   └── utils.ts                      # cn() utility + helpers
+│   │   │   ├── utils.ts                      # cn() utility + helpers
+│   │   │   ├── dashboard-data.ts             # Server/client shared read seam
+│   │   │   └── product-events.ts             # broadcastProductUpdate
 │   │   ├── utils/
 │   │   │   └── supabase/
 │   │   │       ├── client.ts                 # Browser Supabase client
 │   │   │       ├── server.ts                 # Server Component Supabase client
 │   │   │       └── middleware.ts             # Middleware Supabase client
-│   │   ├── middleware.ts                     # Next.js middleware (session refresh)
+│   │   ├── middleware.ts                     # Route protection (dashboard/receipts)
 │   │   └── types/
 │   │       └── index.ts                      # TypeScript interfaces
 │   ├── tsconfig.json
-│   ├── next.config.mjs
+│   ├── next.config.mjs                       # Security headers/CSP + webpack perf
 │   ├── postcss.config.mjs
+│   ├── components.json                       # Shadcn/ui config
 │   ├── package.json
 │   └── .env.local
 │
 ├── backend/                                  # FastAPI Backend
 │   ├── app/
 │   │   ├── __init__.py
-│   │   ├── main.py                           # FastAPI app initialization + CORS + routers
-│   │   ├── config.py                         # Pydantic settings + env validation
-│   │   ├── database.py                       # Supabase client factory
+│   │   ├── main.py                           # FastAPI app + CORS + slowapi + routers
+│   │   ├── config.py                         # Pydantic settings (env-driven)
+│   │   ├── database.py                       # Supabase clients (anon/user/service_role)
+│   │   ├── rate_limit.py                     # SlowAPI per-user limiter
 │   │   ├── schemas/
 │   │   │   ├── __init__.py
-│   │   │   └── order.py                      # Pydantic models
+│   │   │   ├── order.py                      # Checkout request/response models
+│   │   │   ├── admin.py                      # Admin request/response models
+│   │   │   └── product.py                    # Product models
 │   │   ├── adapters/
 │   │   │   ├── __init__.py
-│   │   │   ├── pricing.py                    # Pricing adapter (ADR-001)
-│   │   │   ├── stock.py                      # Stock availability adapter
-│   │   │   ├── txn.py                        # Transaction adapter (ADR-002)
-│   │   │   ├── whatsapp.py                   # WhatsApp deep link adapter
-│   │   │   └── notification.py               # WebSocket broadcast adapter
+│   │   │   ├── pricing.py                    # Hybrid wholesale pricing (ADR-001)
+│   │   │   ├── stock.py                      # Stock availability + InsufficientStockError
+│   │   │   ├── txn.py                        # Atomic create_order transaction (ADR-002)
+│   │   │   ├── whatsapp.py                   # WhatsApp deep link builder (ADR-005)
+│   │   │   ├── notification.py               # WebSocket broadcast adapter
+│   │   │   ├── order_intake.py               # Checkout orchestrator (order intake)
+│   │   │   ├── csv_parser.py                 # CSV parsing for product import
+│   │   │   ├── row_validator.py              # Row validation for product import
+│   │   │   ├── row_normalizer.py             # Row normalization for product import
+│   │   │   └── product_inserter.py           # Product insert/broadcast for import
 │   │   ├── routes/
 │   │   │   ├── __init__.py
-│   │   │   └── checkout.py                   # Thin checkout orchestrator
-│   │   ├── models/                           # Optional Pydantic DB models
-│   │   │   └── __init__.py
+│   │   │   ├── checkout.py                   # POST /checkout (JWT, pricing, stock, txn)
+│   │   │   ├── admin.py                      # Admin endpoints (approve/import/expire/etc.)
+│   │   │   └── ws.py                         # WebSocket endpoint (subprotocol auth)
 │   │   └── utils/
 │   │       ├── __init__.py
-│   │       └── security.py                   # Auth helpers, JWT verification
+│   │       ├── security.py                   # JWT verification + auth deps
+│   │       └── ws_manager.py                 # Connection/room manager
 │   ├── tests/
 │   │   ├── __init__.py
 │   │   ├── conftest.py                       # Test fixtures + mocks
-│   │   └── test_checkout.py                  # 7 tests covering auth/pricing/stock/WhatsApp
-│   ├── migrations/                           # Supabase SQL migrations
-│   ├── .venv/                                # Python virtual environment
+│   │   └── test_*.py                         # checkout, admin, adapters, ws, main
 │   ├── requirements.txt
+│   ├── pytest.ini                            # pytest-asyncio config
+│   ├── seed.py                               # Product seeding script
+│   ├── update_images.py                      # One-off image URL seeder (dev only)
 │   ├── .env.example
-│   └── .env
+│   ├── .env
+│   └── .venv/                                # Python virtual environment
 │
 ├── supabase/                                 # Supabase specific files
-│   ├── migrations/
-│   │   └── 001_initial_schema.sql            # Full schema + enums + stock functions
+│   ├── config.toml                           # CLI config (auth confirmations, etc.)
+│   ├── migrations/                           # Numbered, never re-edit applied files
+│   │   ├── 001_initial_schema.sql            # Full schema + enums + stock functions
+│   │   ├── 002_checkout_order_and_admin_helpers.sql
+│   │   ├── 003_product_images_storage.sql    # Storage bucket + RLS
+│   │   ├── 004_security_hardening.sql        # RLS, SECURITY DEFINER guards
+│   │   ├── 005_expire_pending_orders.sql     # Order expiry RPC
+│   │   └── 006_order_item_upper_bounds.sql   # Order line upper-bound CHECKs
 │   ├── seed.sql                              # Sample products & test users
 │   └── policies.sql                          # All RLS policies + auto-profile trigger
 │
 ├── docs/                                     # Documentation
-│   ├── adr/                                  # Architecture Decision Records
+│   ├── adr/                                  # Architecture Decision Records (001-009)
 │   │   ├── 001-hybrid-wholesale-pricing.md
 │   │   ├── 002-atomic-checkout-transaction.md
 │   │   ├── 003-api-boundary-server-components-vs-fastapi.md
@@ -102,13 +152,22 @@ computer-lot-liquidation/
 │   │   ├── 008-for-parts-visibility.md
 │   │   └── 009-service-role-restricted-endpoint.md
 │   ├── b2b_project.txt                       # Main blueprint (latest version)
-│   ├── Flowchart.txt
-│   ├── Structure.txt
+│   ├── Flowchart.txt                         # Order flow (Mermaid)
+│   ├── Structure.txt                         # This file
 │   ├── architecture.txt                      # Architecture overview
 │   ├── glossary.md                           # Project terminology
 │   └── dev_log.md                            # Development progress tracker
 │
+├── .agents/                                  # Installed agent skills (git-tracked)
+│   └── skills/                               # e.g. grill-me, shadcn, supabase, ...
+├── .opencode/                                # Agent harness config (local, untracked)
 ├── .gitignore
-├── AGENTS.md                                 # AI agent development rules
-├── README.md                                 # Project overview, setup instructions
-└── docker-compose.yml                        # Optional local dev with Supabase
+├── AGENTS.md                                 # AI agent development rules (must-follow)
+├── CHANGELOG.md                              # Changelog of notable changes
+├── opencode.jsonc                            # opencode config (MCP servers, plugin)
+├── skills-lock.json                          # Agent skills lockfile
+├── plan-remaining-candidates.md              # Future architecture candidate plans
+├── security-report.md                        # Security audit report
+├── security-todo.txt                        # Security hardening checklist
+├── setup-ecc.txt                             # ECC tooling setup notes
+└── package.json                              # Root dev tooling (playwright, supabase CLI)
