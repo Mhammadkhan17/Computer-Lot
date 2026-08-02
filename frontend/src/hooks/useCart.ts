@@ -1,8 +1,6 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
 import type { CartItem, Product } from "@/types"
-import { calcSubtotal } from "./usePricing"
-import { useUserRoleStore } from "./useUserRole"
 
 interface CartState {
   items: CartItem[]
@@ -13,7 +11,6 @@ interface CartState {
   clearCart: () => void
   totalItems: () => number
   totalLots: () => number
-  subtotal: (totalLotsCount: number) => number
   setCartOpen: (open: boolean) => void
 }
 
@@ -62,14 +59,6 @@ export const useCart = create<CartState>()(
       totalItems: () => get().items.length,
 
       totalLots: () => get().items.reduce((sum, i) => sum + i.quantity, 0),
-
-      subtotal: (totalLotsCount) => {
-        return calcSubtotal({
-          items: get().items,
-          totalLotsCount,
-          role: useUserRoleStore.getState().role,
-        })
-      },
 
       setCartOpen: (open) => set({ cartOpen: open }),
     }),

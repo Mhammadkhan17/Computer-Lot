@@ -87,22 +87,22 @@ export function ProductCard({ product, isAdmin }: ProductCardProps) {
             <span>{product.items_per_lot}/lot</span>
           </div>
 
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Retail</span>
-              <span className="font-mono font-medium text-foreground">
+          <div className="space-y-1.5">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="shrink-0 text-xs text-muted-foreground">Retail</span>
+              <span className="min-w-0 text-right font-mono text-sm font-medium text-foreground">
                 {currencyFormat.format(Number(product.retail_price_per_lot))}
               </span>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Wholesale</span>
-              <span className="font-mono font-medium text-primary">
-                {currencyFormat.format(Number(product.wholesale_price_per_lot))}
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="shrink-0 text-xs text-muted-foreground">
+                Wholesale
                 {product.minimum_wholesale_lots > 1 && (
-                  <span className="ml-1 text-[10px] text-muted-foreground">
-                    /{product.minimum_wholesale_lots}
-                  </span>
+                  <span className="ml-1 text-[10px]">/{product.minimum_wholesale_lots}</span>
                 )}
+              </span>
+              <span className="min-w-0 text-right font-mono text-sm font-medium text-primary">
+                {currencyFormat.format(Number(product.wholesale_price_per_lot))}
               </span>
             </div>
           </div>

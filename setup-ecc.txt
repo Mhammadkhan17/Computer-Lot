@@ -1,0 +1,130 @@
+ECC (Energized Coding Companion) — New Project Setup Guide
+===========================================================
+
+Quick install: copy the .opencode/ folder from a project that already has
+ECC, then install the npm deps and restart opencode.
+
+If you don't have a source project, follow the full steps below.
+
+
+QUICK PATH (recommended if copying from this project)
+-----------------------------------------------------
+
+1. Copy the ECC catalog into the new project (skip node_modules/,
+   package.json, package-lock.json — those are auto-generated):
+
+     cp -r /path/to/source-project/.opencode/. <new-project>/.opencode/
+     rm -rf <new-project>/.opencode/node_modules
+     rm -f  <new-project>/.opencode/package.json <new-project>/.opencode/package-lock.json
+
+   Files that copy over:
+     - commands/           35 slash commands (auto-discovered)
+     - prompts/agents/     25 agent prompt files
+     - skills/             11 skills (auto-discovered)
+     - instructions/       ECC instructions
+     - opencode.json       registers 26 agents (relative paths, works anywhere)
+     - plugin/ecc.ts       plugin shim
+     - .gitignore          ignores auto-generated deps
+
+2. Install the npm deps from the new project root:
+
+     cd <new-project>
+     npm install --save-dev ecc-universal @opencode-ai/plugin
+
+3. Add the plugin entry to the new project's opencode.json/opencode.jsonc:
+
+     {
+       "plugin": ["./.opencode/plugin/ecc.ts"]
+     }
+
+4. Restart opencode.
+   Verify: / slash commands, @ subagents, and skills should now appear.
+
+
+FULL PATH (manual install, no source project)
+---------------------------------------------
+
+1. Install the npm deps from the project root:
+
+     npm install --save-dev ecc-universal @opencode-ai/plugin
+
+2. Create the plugin shim at .opencode/plugin/ecc.ts:
+
+     import eccPlugin from "../../node_modules/ecc-universal/.opencode/dist/index.js";
+     export default eccPlugin;
+
+3. Add the plugin entry to opencode.json/opencode.jsonc:
+
+     {
+       "plugin": ["./.opencode/plugin/ecc.ts"]
+     }
+
+4. Copy the catalog from the installed package:
+
+     cp -r node_modules/ecc-universal/.opencode/{commands,prompts,instructions} .opencode/
+     mkdir -p .opencode/skills
+     for s in tdd-workflow security-review coding-standards frontend-patterns \
+              frontend-slides backend-patterns e2e-testing verification-loop \
+              api-design strategic-compact eval-harness; do
+       cp -r "node_modules/ecc-universal/skills/$s" ".opencode/skills/$s"
+     done
+
+5. Create .opencode/opencode.json registering the agents. Use the copy in
+   this project as a template (see below for what to strip).
+
+6. Restart opencode.
+
+
+NOTES ON THE AGENTS CONFIG (.opencode/opencode.json)
+----------------------------------------------------
+
+The package ships a reference config at:
+  node_modules/ecc-universal/.opencode/opencode.json
+
+If you copy it, strip the following to avoid problems in a normal project:
+  - "model", "small_model", "default_agent"     -> forces Anthropic models
+  - "plugin"                                    -> conflicts with the shim above
+  - "command" block                             -> commands are auto-discovered from
+                                                    .opencode/commands/*.md; keeping the
+                                                    block creates duplicates
+  - "skills.paths"                              -> skills are auto-discovered from
+                                                    .opencode/skills/<name>/SKILL.md
+  - "permission": { "mcp_*": "ask" }            -> prompts on every MCP call; remove
+                                                    unless you want that
+
+Agent "model" entries can also be removed so agents fall back to the
+project's default model.
+
+Keep "instructions" but fix paths to be relative to .opencode/:
+  "instructions": ["./instructions/INSTRUCTIONS.md", "./skills/.../SKILL.md", ...]
+prompt "{file:...}" references and "instructions" both resolve relative to
+the config file location (.opencode/), so "./" prefixes are correct.
+
+
+WHAT YOU GET
+------------
+
+Plugin hooks + custom tools (from the npm package via the shim):
+  - tool.execute.before/after, session hooks, permission.ask, etc.
+  - custom tools: run-tests, git-summary, security-audit, lint-check, ...
+
+Catalog (from the copied folders):
+  - 35 slash commands: /plan /tdd /code-review /security /build-fix /e2e ...
+  - 26 agents: planner, architect, code-reviewer, tdd-guide, ...
+  - 11 skills: tdd-workflow, security-review, coding-standards, ...
+
+
+TROUBLESHOOTING
+---------------
+
+- "Plugin export is not a function" on startup:
+  Do NOT point the plugin directly at
+  node_modules/ecc-universal/.opencode/dist/index.js — that module exports
+  VERSION and metadata alongside the plugin, which opencode's loader rejects.
+  Use the shim (plugin/ecc.ts) which re-exports only the plugin function.
+
+- Commands/agents/skills don't appear:
+  Make sure the catalog folders exist under .opencode/ and restart opencode.
+
+- Check the log if the plugin fails to load:
+  grep "failed to load plugin" ~/.local/share/opencode/log/opencode.log

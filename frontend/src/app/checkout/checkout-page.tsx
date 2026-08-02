@@ -5,7 +5,6 @@ import { ArrowLeft, ImageOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { CheckoutButton } from "@/components/checkout-button"
 import { useCart } from "@/hooks/useCart"
-import { usePricing } from "@/hooks/usePricing"
 
 const currencyFormat = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -20,11 +19,9 @@ const gradeColors: Record<string, string> = {
 }
 
 export function CheckoutPage() {
-  const { items, totalLots, subtotal } = useCart()
-  const { resolvePrice, isWholesale, role } = usePricing()
+  const { items, totalLots } = useCart()
 
   const totalLotsCount = totalLots()
-  const isWholesaleEligible = role === "wholesale_approved"
 
   if (items.length === 0) {
     return (
@@ -54,7 +51,7 @@ export function CheckoutPage() {
 
       <div className="mb-8 space-y-2">
         {items.map((item) => {
-          const price = resolvePrice({ product: item.product, quantity: item.quantity, totalLotsCount })
+          const price = Number(item.product.retail_price_per_lot)
           const image = item.product.images?.[0]
 
           return (
@@ -83,7 +80,7 @@ export function CheckoutPage() {
                   {item.product.title}
                 </p>
                 <p className="font-mono text-xs text-muted-foreground">
-                  {price === Number(item.product.wholesale_price_per_lot) ? "WHOLESALE" : "RETAIL"} &mdash; {currencyFormat.format(price)} / lot
+                  RETAIL &mdash; {currencyFormat.format(price)} / lot
                 </p>
               </div>
               <div className="text-right shrink-0">
@@ -107,18 +104,13 @@ export function CheckoutPage() {
             </div>
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Pricing tier</span>
-            <span className="font-mono font-medium text-foreground">
-              {isWholesale(totalLotsCount) ? "WHOLESALE" : "RETAIL"}
-            </span>
+            <span className="font-mono font-medium text-foreground">RETAIL</span>
           </div>
-          {isWholesaleEligible && !isWholesale(totalLotsCount) && totalLotsCount > 0 && (
-            <p className="font-mono text-xs text-primary">
-              ADD {10 - totalLotsCount} MORE LOTS FOR WHOLESALE PRICING
-            </p>
-          )}
           <div className="flex justify-between border-t border-border pt-3 font-display text-lg font-bold text-foreground">
             <span>Total</span>
-            <span className="font-mono">{currencyFormat.format(subtotal(totalLotsCount))}</span>
+            <span className="font-mono">
+              {currencyFormat.format(items.reduce((sum, i) => sum + Number(i.product.retail_price_per_lot) * i.quantity, 0))}
+            </span>
           </div>
         </div>
       </div>

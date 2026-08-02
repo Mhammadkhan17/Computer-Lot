@@ -4,7 +4,6 @@ import Link from "next/link"
 import { Minus, Plus, ShoppingCart, Trash2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useCart } from "@/hooks/useCart"
-import { usePricing } from "@/hooks/usePricing"
 
 const currencyFormat = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -12,16 +11,14 @@ const currencyFormat = new Intl.NumberFormat("en-US", {
 })
 
 export function CartDrawer() {
-  const { items, removeItem, updateQuantity, clearCart, totalLots, subtotal, cartOpen, setCartOpen } = useCart()
-  const { resolvePrice, isWholesale, role } = usePricing()
+  const { items, removeItem, updateQuantity, clearCart, totalLots, cartOpen, setCartOpen } = useCart()
 
   const isOpen = cartOpen
 
   const close = () => setCartOpen(false)
 
   const totalLotsCount = totalLots()
-  const cartSubtotal = subtotal(totalLotsCount)
-  const isWholesaleEligible = role === "wholesale_approved"
+  const cartSubtotal = items.reduce((sum, i) => sum + Number(i.product.retail_price_per_lot) * i.quantity, 0)
 
   return (
     <div
@@ -54,12 +51,6 @@ export function CartDrawer() {
           </Button>
         </div>
 
-        {isWholesale(totalLotsCount) && items.length > 0 && (
-          <div className="border-b border-border bg-inventory-100 px-4 py-2 font-mono text-xs font-medium text-inventory-600">
-            Wholesale pricing applied &mdash; 10+ lots
-          </div>
-        )}
-
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {items.length === 0 && (
             <div className="flex h-full flex-col items-center justify-center text-muted-foreground">
@@ -72,7 +63,7 @@ export function CartDrawer() {
           )}
 
           {items.map((item) => {
-            const price = resolvePrice({ product: item.product, quantity: item.quantity, totalLotsCount })
+            const price = Number(item.product.retail_price_per_lot)
 
             return (
               <div key={item.product.id} className="flex gap-2 border border-border p-3 max-[400px]:flex-col max-[400px]:gap-2">
@@ -81,7 +72,7 @@ export function CartDrawer() {
                     {item.product.title}
                   </p>
                   <p className="font-mono text-xs text-muted-foreground">
-                    {price === Number(item.product.wholesale_price_per_lot) ? "WHOLESALE" : "RETAIL"} &mdash; {currencyFormat.format(price)} / lot
+                    RETAIL &mdash; {currencyFormat.format(price)} / lot
                   </p>
                   <p className="text-xs text-muted-foreground">
                     Stock: {item.product.available_stock_lots} lots
@@ -139,12 +130,6 @@ export function CartDrawer() {
               <span className="text-muted-foreground">Total lots</span>
               <span className="font-mono font-medium text-foreground">{totalLotsCount}</span>
             </div>
-
-            {isWholesaleEligible && !isWholesale(totalLotsCount) && totalLotsCount > 0 && (
-              <p className="font-mono text-xs text-primary">
-                ADD {10 - totalLotsCount} MORE LOTS FOR WHOLESALE PRICING
-              </p>
-            )}
 
             <div className="flex items-center justify-between border-t border-border pt-3 font-display text-lg font-bold text-foreground">
               <span>Subtotal</span>

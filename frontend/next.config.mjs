@@ -8,12 +8,15 @@ const nextConfig = {
   },
   async headers() {
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+    // React Fast Refresh (dev-only hot-reload runtime) uses eval/'new Function'.
+    // The production build ships no such code, so only allow unsafe-eval in dev.
+    const isDev = process.env.NODE_ENV === "development"
     const csp = [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline'",
+      `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "img-src 'self' data: https:",
-      "font-src https://fonts.gstatic.com",
+      "font-src 'self' https://fonts.gstatic.com",
       `connect-src 'self' https://*.supabase.co ${apiUrl}`,
       "frame-ancestors 'none'",
       "base-uri 'self'",

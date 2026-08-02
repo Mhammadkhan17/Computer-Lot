@@ -7,7 +7,7 @@ class InsufficientStockError(Exception):
         super().__init__("insufficient_stock")
 
 
-def check_availability(products, quantities):
+def check_availability(products: list[dict], quantities: list[dict]) -> list[StockErrorItem]:
     products_by_id = {p["id"]: p for p in products}
     errors = []
     for qty_entry in quantities:

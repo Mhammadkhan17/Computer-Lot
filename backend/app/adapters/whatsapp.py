@@ -3,7 +3,7 @@ from urllib.parse import quote
 from app.config import settings
 
 
-def _clean(value) -> str:
+def _clean(value: str) -> str:
     return " ".join(str(value).split())
 
 

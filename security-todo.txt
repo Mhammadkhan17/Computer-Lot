@@ -411,3 +411,32 @@ Cross-cutting (Round 2)
 - Verify after all changes: service_role grep confined to
   config.py/database.py/routes/checkout.py; conftest limiter disable intact;
   backend pytest -q; frontend tsc --noEmit; next.config.mjs ESM import.
+
+------------------------------------------------------------------------------
+ Additional hardening (post-round-2, user-requested)
+ ------------------------------------------------------------------------------
+
+ #7. Upper bound on unit_price_applied CHECK constraint (defense-in-depth)
+ Files:
+ - supabase/migrations/006_order_item_upper_bounds.sql (NEW)
+   * order_items_quantity_ordered_check: ADD quantity_ordered <= 1000
+     (matches Pydantic Field(gt=0, le=1000) in schemas/order.py).
+   * order_items_unit_price_applied_check: ADD unit_price_applied <= 1000000.
+   * Replaces create_order with same 5-param signature, adding guards:
+     - jsonb_array_length(p_items) > 50 → RAISE
+     - v_quantity <= 0 OR v_quantity > 1000 → RAISE
+     - v_unit_price <= 0 OR v_unit_price > 1000000 → RAISE
+   * CREATE OR REPLACE preserves existing grants (service_role only).
+ - Live verification: constraints present in pg_constraint; 99 tests pass.
+ Status: [x]
+
+ #8. Clean up test warnings (InsecureKeyLength from 11-byte JWT secret)
+ Files:
+ - backend/tests/conftest.py (line 6): SUPABASE_JWT_SECRET changed from
+   "test-secret" (11 bytes) to "test-secret-key-0123456789abcdef0123456789abcdef"
+   (48 bytes, meets SHA256 minimum of 32 bytes per RFC 7518 §3.2).
+ - All 10 test files that set SUPABASE_JWT_SECRET updated to match.
+ - Result: 197 warnings → 143 warnings (all remaining are third-party
+   library deprecations: fastapi/starlette/slowapi async-iscoroutinefunction,
+   gotrue deprecation; none from our code).
+ Status: [x]

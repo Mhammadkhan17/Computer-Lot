@@ -2,9 +2,124 @@
 
 All notable changes to this project are documented in this file.
 
-Last updated: 2026-08-01 23:30 UTC
+Last updated: 2026-08-02 20:15 UTC
 
 ## [Unreleased]
+
+### Storefront interaction fixes (2026-08-02)
+
+#### Fixed: product zoom/carousel unresponsive — CSP blocking the dev runtime
+The security commit's new CSP (`script-src 'self' 'unsafe-inline'`) blocked the
+`eval`/`new Function` used by Next.js React Fast Refresh under `next dev`. The script
+threw, client event handlers never mounted, and every click on the product page
+(lightbox open, zoom, carousel arrows) was dead. Production was unaffected.
+
+- `frontend/next.config.mjs`: `script-src` now appends `'unsafe-eval'` **only when**
+  `NODE_ENV === "development"` (the dev-only hot-reload runtime; the production build
+  ships no such code). The check is scoped to the explicit dev mode so `test` builds
+  do not weaken the policy.
+- Verified with Playwright against `next dev`: thumbnail click changes the image,
+  lightbox opens, zoom scale moves `100% → 125%`, carousel arrows work, no page errors.
+- `frontend/next.config.mjs`: `font-src` now also allows `'self'` so the self-hosted
+  Geist woff2 (served from the same origin) loads; external `fonts.gstatic.com` kept.
+  Cleared the dev-console font/CSP warnings (verified: zero console warnings).
+
+#### Fixed: checkout page crashed — `useSyncExternalStore` in a Server Component
+`checkout-page.tsx` calls `useCart()` (Zustand + persist → `useSyncExternalStore`), a
+client-only hook. The route page rendered it as a Server Component, producing a runtime
+`TypeError` on `/checkout`.
+
+- `frontend/src/app/checkout/checkout-page.tsx`: added `"use client"`.
+- `frontend/src/app/checkout/page.tsx`: added `export const dynamic = "force-dynamic"`
+  (the page reads persisted client cart state).
+
+#### Fixed: checkout "Failed to fetch" — CORS did not include the dev origin
+The frontend dev server runs on `:3001`; FastAPI's CORS allowed only `http://localhost:3000`,
+so the browser blocked the cross-origin POST to `/checkout`.
+
+- `backend/.env` (local, not committed): `CORS_ORIGINS` now includes
+  `http://localhost:3000,http://localhost:3001`; `FRONTEND_URL` set to
+  `http://localhost:3001` (WhatsApp/receipt links point at the live dev origin).
+- Verified: `/checkout` preflight from `:3001` → `access-control-allow-origin: http://localhost:3001`;
+  POST reaches FastAPI (401 "Missing authorization header" without a JWT, i.e. the fetch succeeds).
+- `frontend/src/components/checkout-button.tsx`: the catch block now logs the error
+  (`console.error`) instead of swallowing it, keeping the user-facing message.
+
+#### Changed: product gallery input — touch/pinch swipe, always-visible arrows
+- `frontend/src/app/products/[id]/product-detail-content.tsx`: wheel zoom moved to a
+  non-passive native `wheel` listener on the zoom container (works reliably with the
+  lightbox's own overflow handling); added one-finger horizontal swipe to
+  prev/next and two-finger pinch-to-zoom (`touchAction: none`).
+- Carousel prev/next arrows no longer fade out on non-hover devices (always `opacity-90`,
+  visible on touch); grade and AS-IS badges raised to `z-10` above the lightbox bar.
+- Earlier speculative `h-[85vh]` lightbox clamp reverted to `h-[90dvh]` (not the cause).
+
+### Cart/checkout pricing display (2026-08-02)
+
+#### Changed: client shows RETAIL pricing; backend stays the pricing authority
+The frontend's client-side wholesale pricing layer (`hooks/usePricing.ts`, `calcSubtotal`,
+role lookups) was removed. Cart drawer and checkout review now compute displayed prices
+from `retail_price_per_lot` directly; the "Wholesale pricing applied" banner and the
+"ADD X MORE LOTS FOR WHOLESALE PRICING" nudge were removed. Wholesale pricing is still
+applied authoritatively by the backend `/checkout` flow (ADR-001), so displayed totals
+reflect the price the backend actually charges on a wholesale-eligible order.
+
+- Deleted `frontend/src/hooks/usePricing.ts`; `hooks/useCart.ts` dropped the `subtotal`
+  action; `cart-drawer.tsx` and `checkout-page.tsx` compute subtotals inline.
+- `frontend/src/components/product-card.tsx`: price block re-flowed (aligned retail /
+  wholesale rows, `min-w-0` truncation for long prices).
+- `frontend/src/app/receipts/[id]/receipt-content.tsx`: WhatsApp link drops the
+  placeholder fallback phone (`1234567890`), using only `NEXT_PUBLIC_MERCHANT_PHONE`.
+
+### Order intake module (architecture review, Candidate 1)
+
+#### Deepened: collapsed the order-intake module
+`backend/app/adapters/order_intake.py` (141 → 120 lines) absorbed three one-off private
+helpers into their single call sites: `_validate_stock` → inline
+`check_availability`, `_resolve_pricing` → inline `resolve_all_items`, and
+`_build_order_data` → a literal order dict. The `create()` signature is unchanged and the
+whole module still runs the UX pre-check → pricing → transaction → WhatsApp sequence.
+
+- `backend/app/adapters/pricing.py`: added typed `PricingResult` (items + subtotal) and
+  `resolve_checkout()`; `resolve_price`/`resolve_all_items` gained full type hints.
+- `backend/app/adapters/stock.py`, `whatsapp.py`: type hints added (`StockErrorItem`,
+  `str` returns).
+- `backend/app/adapters/txn.py`: the transaction catch narrowed to
+  `(httpx.HTTPError, RuntimeError)` so programming errors still surface instead of being
+  masked as a generic 500.
+- `backend/app/config.py`: `open_order_cap` moved into `Settings` (default 20);
+  `order_intake.py` reads it from settings instead of a module constant.
+- `backend/app/database.py`: documented the supabase-py HTTP/2 workaround
+  (upstream issue #438) with a 2026-08-02 review date.
+- NEW `backend/tests/test_adapters_order_intake.py` covering the collapsed `create()`
+  path (replaces the removed helper-level tests).
+
+### Database & tests (2026-08-02)
+
+#### Added: defense-in-depth upper bounds on order lines
+NEW `supabase/migrations/006_order_item_upper_bounds.sql` (never edits 001–005):
+- `order_items` CHECKs now cap `quantity_ordered <= 1000` and
+  `unit_price_applied <= 1000000` (matching the Pydantic `Field(gt=0, le=1000)`).
+- `create_order` re-created with the same 5-param signature, adding guards:
+  empty/NULL `p_items`, `jsonb_array_length(p_items) > 50`, `v_quantity <= 0 || > 1000`,
+  `v_unit_price <= 0 || > 1000000` all `RAISE`. `CREATE OR REPLACE` preserves the
+  existing `service_role`-only grant.
+
+#### Fixed: weak JWT secret in tests (InsecureKeyLength warnings)
+`backend/tests/conftest.py` and all test modules set `SUPABASE_JWT_SECRET` to
+`test-secret-key-0123456789abcdef0123456789abcdef` (48 bytes, ≥32-byte SHA256 minimum
+per RFC 7518 §3.2) instead of the 11-byte `test-secret`. Test warnings dropped
+197 → 143 (remainder are third-party library deprecations).
+
+#### Verified (2026-08-02)
+- Backend `pytest -q`: **110 passed**.
+- Frontend `npx tsc --noEmit`: exit 0.
+- Playwright (chromium, headless): product page `9/9` images render, zoom/carousel/
+  lightbox interact, zero console errors; `/checkout` route `HTTP 200`.
+- Note: seed products still reference `upload.wikimedia.org` hotlinks in
+  `products.images`, which Wikimedia intermittently rate-limits (HTTP 429); this is
+  transient and unrelated to the app (the `product-images` storage bucket images always
+  render). Re-hosting those seeds into the bucket remains a recommended follow-up.
 
 ### Security Hardening — Round 1 (C1–C4, H1–H4)
 

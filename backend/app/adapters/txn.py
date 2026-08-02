@@ -1,3 +1,4 @@
+import httpx
 import logging
 
 from fastapi import HTTPException
@@ -30,7 +31,7 @@ def run_in_transaction(supabase: Client, order_data: dict, items: list) -> dict:
                 "p_items": p_items,
             },
         ).execute()
-    except Exception as exc:
+    except (httpx.HTTPError, RuntimeError) as exc:
         logger.error("Checkout transaction failed: %s", exc)
         raise HTTPException(status_code=500, detail="Checkout failed, order rolled back") from exc
 

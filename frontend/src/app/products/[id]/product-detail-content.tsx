@@ -92,12 +92,6 @@ export function ProductDetailContent({ product, relatedPool, isAdmin }: ProductD
 
   const clampScale = (s: number) => Math.max(1, Math.min(5, s))
 
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault()
-    const delta = e.deltaY < 0 ? 0.25 : -0.25
-    setScale((prev) => clampScale(prev + delta))
-  }, [])
-
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (scale <= 1) return
     isDragging.current = true
@@ -155,6 +149,56 @@ export function ProductDetailContent({ product, relatedPool, isAdmin }: ProductD
     return () => document.removeEventListener("fullscreenchange", handler)
   }, [])
 
+  const zoomRef = useRef<HTMLDivElement>(null)
+  const swipeStart = useRef<number | null>(null)
+  const pinchBase = useRef<{ dist: number; scale: number } | null>(null)
+
+  useEffect(() => {
+    const el = zoomRef.current
+    if (!el || !lightboxOpen) return
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      setScale((prev) => clampScale(prev + (e.deltaY < 0 ? 0.25 : -0.25)))
+    }
+    el.addEventListener("wheel", onWheel, { passive: false })
+    return () => el.removeEventListener("wheel", onWheel)
+  }, [lightboxOpen])
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length >= 2) {
+      const [a, b] = [e.touches[0], e.touches[1]]
+      pinchBase.current = {
+        dist: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY),
+        scale,
+      }
+      swipeStart.current = null
+    } else if (e.touches.length === 1) {
+      swipeStart.current = e.touches[0].clientX
+      pinchBase.current = null
+    }
+  }, [scale])
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (pinchBase.current && e.touches.length >= 2) {
+      const [a, b] = [e.touches[0], e.touches[1]]
+      const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)
+      e.preventDefault()
+      setScale((prev) => clampScale(pinchBase.current!.scale * (dist / pinchBase.current!.dist)))
+    }
+  }, [])
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    if (swipeStart.current != null) {
+      const dx = e.changedTouches[0].clientX - swipeStart.current
+      swipeStart.current = null
+      if (Math.abs(dx) > 60) {
+        if (dx < 0) nextImage()
+        else prevImage()
+      }
+    }
+    pinchBase.current = null
+  }, [nextImage, prevImage])
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 pb-24 lg:pb-8">
       <Link
@@ -193,14 +237,14 @@ export function ProductDetailContent({ product, relatedPool, isAdmin }: ProductD
               <>
                 <button
                   onClick={(e) => { e.stopPropagation(); prevImage() }}
-                  className="absolute left-2 top-1/2 -translate-y-1/2 flex h-9 w-9 items-center justify-center rounded-full bg-black/40 text-white opacity-0 transition-opacity hover:bg-black/60 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent cursor-pointer"
+                  className="absolute left-2 top-1/2 -translate-y-1/2 flex h-9 w-9 items-center justify-center rounded-full bg-black/40 text-white opacity-90 transition-opacity hover:bg-black/60 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:opacity-100 cursor-pointer"
                   aria-label="Previous image"
                 >
                   <ChevronLeft className="h-5 w-5" aria-hidden="true" />
                 </button>
                 <button
                   onClick={(e) => { e.stopPropagation(); nextImage() }}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 flex h-9 w-9 items-center justify-center rounded-full bg-black/40 text-white opacity-0 transition-opacity hover:bg-black/60 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent cursor-pointer"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 flex h-9 w-9 items-center justify-center rounded-full bg-black/40 text-white opacity-90 transition-opacity hover:bg-black/60 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:opacity-100 cursor-pointer"
                   aria-label="Next image"
                 >
                   <ChevronRight className="h-5 w-5" aria-hidden="true" />
@@ -209,12 +253,12 @@ export function ProductDetailContent({ product, relatedPool, isAdmin }: ProductD
             )}
 
             <span
-              className={`absolute left-3 top-3 flex h-8 w-8 items-center justify-center font-mono text-xs font-bold text-white ${grade.color} pointer-events-none`}
+              className={`absolute left-3 top-3 z-10 flex h-8 w-8 items-center justify-center font-mono text-xs font-bold text-white ${grade.color} pointer-events-none`}
             >
               {grade.label}
             </span>
             {product.grade === "For_Parts" && (
-              <span className={`absolute right-3 top-3 px-3 py-1 font-mono text-xs font-bold text-white ${grade.color} pointer-events-none`}>
+              <span className={`absolute right-3 top-3 z-10 px-3 py-1 font-mono text-xs font-bold text-white ${grade.color} pointer-events-none`}>
                 AS-IS
               </span>
             )}
@@ -282,14 +326,17 @@ export function ProductDetailContent({ product, relatedPool, isAdmin }: ProductD
               <div className="relative flex flex-1 items-center justify-center overflow-hidden">
                 {images[selectedImage] && (
                   <div
+                    ref={zoomRef}
                     className="flex h-full w-full items-center justify-center overflow-hidden select-none"
-                    onWheel={handleWheel}
+                    onTouchStart={handleTouchStart}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={handleTouchEnd}
                     onMouseDown={handleMouseDown}
                     onMouseMove={handleMouseMove}
                     onMouseUp={handleMouseUp}
                     onMouseLeave={handleMouseUp}
                     onDoubleClick={handleDoubleClick}
-                    style={{ cursor: scale > 1 ? (isDragging.current ? "grabbing" : "grab") : "default" }}
+                    style={{ touchAction: "none", cursor: scale > 1 ? (isDragging.current ? "grabbing" : "grab") : "default" }}
                   >
                     <img
                       src={images[selectedImage]}

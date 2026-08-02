@@ -52,6 +52,8 @@ def _verify_jwt_locally(token: str) -> dict:
             token,
             settings.supabase_jwt_secret,
             algorithms=["HS256"],
+            # verify_aud disabled: Supabase JWTs use the "authenticated" audience
+            # which may not match the expected aud claim in local verification.
             options={"verify_aud": False},
         )
         logger.info("JWT verified locally for user: %s", str(payload.get("sub"))[:8])

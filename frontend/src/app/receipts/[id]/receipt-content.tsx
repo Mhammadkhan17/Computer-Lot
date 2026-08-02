@@ -96,7 +96,7 @@ export function ReceiptContent({ order }: Props) {
         asChild
       >
         <a
-          href={`https://wa.me/${process.env.NEXT_PUBLIC_MERCHANT_PHONE || "1234567890"}?text=${message}`}
+          href={`https://wa.me/${process.env.NEXT_PUBLIC_MERCHANT_PHONE}?text=${message}`}
           target="_blank"
           rel="noopener noreferrer"
         >

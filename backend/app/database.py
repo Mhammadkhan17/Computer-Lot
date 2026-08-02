@@ -8,7 +8,10 @@ from app.utils.security import get_access_token
 
 
 # HTTP/2 connections are being terminated by Supabase server between requests.
+# This is a known upstream issue in the supabase-py client (see:
+# https://github.com/supabase/supabase-py/issues/438).
 # Disable HTTP/2 to use reliable HTTP/1.1 connections instead.
+# Review date: 2026-08-02 — re-evaluate when supabase-py ships a fix.
 _orig_create_session = SyncPostgrestClient.create_session
 
 

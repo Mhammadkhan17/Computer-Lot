@@ -1,9 +1,23 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "plugin": ["./.opencode/plugin/ecc.ts"],
   "mcp": {
+    "sequential-thinking": {
+      "type": "local",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-sequential-thinking"],
+      "enabled": true
+    },
     "supabase": {
       "type": "remote",
       "url": "https://mcp.supabase.com/mcp?project_ref=ybwbwllmryjdfqvfpcik",
+      "enabled": true
+    },
+    "context7": {
+      "type": "local",
+      "command": ["npx", "-y", "@upstash/context7-mcp"],
+      "env": {
+        "CONTEXT7_API_KEY": "${context7_API_KEY}"
+      },
       "enabled": true
     }
   }

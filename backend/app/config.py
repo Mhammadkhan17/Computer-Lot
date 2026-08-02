@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     supabase_db_user: str = "postgres"
     supabase_db_password: str = ""
     supabase_db_port: int = 5432
+    open_order_cap: int = 20
     app_name: str = "Computer Lot Liquidation API"
     debug: bool = False
 

@@ -10,11 +10,10 @@ from app.adapters.pricing import resolve_all_items
 from app.adapters.stock import check_availability, InsufficientStockError
 from app.adapters.txn import run_in_transaction
 from app.adapters.whatsapp import build_order_link
+from app.config import settings
 from app.schemas.order import CheckoutRequest, CheckoutResponse
 
 logger = logging.getLogger(__name__)
-
-OPEN_ORDER_CAP = 20
 
 
 def _assert_open_order_cap(supabase: Client, user_id: str) -> None:
@@ -26,7 +25,7 @@ def _assert_open_order_cap(supabase: Client, user_id: str) -> None:
         .execute()
     )
     open_count = len(resp.data) if resp.data else 0
-    if open_count >= OPEN_ORDER_CAP:
+    if open_count >= settings.open_order_cap:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
@@ -60,37 +59,6 @@ def _fetch_products(supabase: Client, product_ids: list[str]) -> dict[str, dict]
     return {p["id"]: p for p in products_list}
 
 
-def _validate_stock(products_map: dict[str, dict], checkout_req: CheckoutRequest) -> list[dict]:
-    quantities = [
-        {"product_id": item.product_id, "quantity": item.quantity}
-        for item in checkout_req.items
-    ]
-    products_list = list(products_map.values())
-    return check_availability(products_list, quantities)
-
-
-def _resolve_pricing(
-    products_map: dict[str, dict],
-    checkout_req: CheckoutRequest,
-    role: str,
-    total_lots: int,
-) -> list:
-    quantities = [
-        {"product_id": item.product_id, "quantity": item.quantity}
-        for item in checkout_req.items
-    ]
-    return resolve_all_items(products_map, quantities, role, total_lots)
-
-
-def _build_order_data(customer_name: str, customer_phone: str, total_amount: float, user_id: str) -> dict:
-    return {
-        "user_id": user_id,
-        "customer_name": customer_name,
-        "customer_phone": customer_phone,
-        "total_amount": total_amount,
-    }
-
-
 async def create(
     checkout_req: CheckoutRequest,
     supabase: Client,
@@ -109,16 +77,26 @@ async def create(
 
     # UX pre-check only — the authoritative stock check happens inside the
     # create_order transaction with row locks (see migration 004).
-    stock_errors = _validate_stock(products_map, checkout_req)
+    quantities = [
+        {"product_id": item.product_id, "quantity": item.quantity}
+        for item in checkout_req.items
+    ]
+    products_list = list(products_map.values())
+    stock_errors = check_availability(products_list, quantities)
     if stock_errors:
         raise InsufficientStockError(stock_errors)
 
     total_lots = sum(item.quantity for item in checkout_req.items)
-    resolved_items = _resolve_pricing(products_map, checkout_req, role, total_lots)
+    resolved_items = resolve_all_items(products_map, quantities, role, total_lots)
 
     total_amount = sum(item.unit_price_applied * item.quantity_ordered for item in resolved_items)
 
-    order_data = _build_order_data(customer_name, customer_phone, total_amount, user_id)
+    order_data = {
+        "user_id": user_id,
+        "customer_name": customer_name,
+        "customer_phone": customer_phone,
+        "total_amount": total_amount,
+    }
     txn_result = await asyncio.to_thread(run_in_transaction, tx_supabase, order_data, resolved_items)
     order_id = txn_result["order_id"]
     readable_order_id = txn_result["readable_order_id"]

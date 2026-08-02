@@ -93,8 +93,8 @@ function parseSpecValue(value: string): unknown {
   }
 }
 
-function toPublicUrl(path: string): string {
-  return createClient().storage.from(IMAGE_BUCKET).getPublicUrl(path).data.publicUrl
+function toPublicUrl(supabase: ReturnType<typeof createClient>, path: string): string {
+  return supabase.storage.from(IMAGE_BUCKET).getPublicUrl(path).data.publicUrl
 }
 
 export function ProductFormDialog({ mode, product, onSuccess, trigger }: ProductFormDialogProps) {
@@ -176,7 +176,7 @@ export function ProductFormDialog({ mode, product, onSuccess, trigger }: Product
         upsert: false,
       })
       if (error) throw error
-      urls.push(toPublicUrl(path))
+      urls.push(toPublicUrl(supabase, path))
     }
     return urls
   }
