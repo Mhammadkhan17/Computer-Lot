@@ -29,28 +29,31 @@ export function resolvePrice(
   role: UserRole | null,
   totalLots: number
 ): number {
+  const retail = Number(product.retail_price_per_lot)
+  const wholesale = Number(product.wholesale_price_per_lot)
+
   if (quantity < product.minimum_wholesale_lots) {
-    return Number(product.retail_price_per_lot)
+    return retail
   }
 
   if (role === "wholesale_approved") {
     const approved = product.approved_price_per_lot
     if (approved !== undefined && approved !== null) {
       const approvedFloat = Number(approved)
-      // Mirror of the products_approved_price_check DB CHECK: never overcharge
-      // with an approved price above wholesale (bad config).
-      if (approvedFloat <= Number(product.wholesale_price_per_lot)) {
-        return approvedFloat
+      // Mirrors of products_approved_price_check and
+      // products_wholesale_price_check: never overcharge with bad config.
+      if (approvedFloat <= wholesale) {
+        return Math.min(approvedFloat, retail)
       }
     }
-    return Number(product.wholesale_price_per_lot)
+    return Math.min(wholesale, retail)
   }
 
   if (totalLots >= 10) {
-    return Number(product.wholesale_price_per_lot)
+    return Math.min(wholesale, retail)
   }
 
-  return Number(product.retail_price_per_lot)
+  return retail
 }
 
 export type PricingTier = "RETAIL" | "WHOLESALE" | "APPROVED"
