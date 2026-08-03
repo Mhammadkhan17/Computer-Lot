@@ -19,13 +19,6 @@ const gradeConfig = {
   For_Parts: { label: "FP", color: "bg-grade-parts" },
 }
 
-const gradeLabels: Record<string, string> = {
-  Grade_A: "Grade A",
-  Grade_B: "Grade B",
-  Grade_C: "Grade C",
-  For_Parts: "For Parts",
-}
-
 interface ProductCardProps {
   product: Product
   isAdmin?: boolean

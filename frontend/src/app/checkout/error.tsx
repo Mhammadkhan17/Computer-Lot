@@ -4,6 +4,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 
 export default function CheckoutError({
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- error prop is part of the Next.js error boundary contract
   error,
   reset,
 }: {
