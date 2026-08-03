@@ -4,6 +4,8 @@ import Link from "next/link"
 import { Minus, Plus, ShoppingCart, Trash2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useCart } from "@/hooks/useCart"
+import { useUserRole } from "@/hooks/useUserRole"
+import { resolvePrice, resolveTier } from "@/lib/pricing"
 
 const currencyFormat = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -12,13 +14,23 @@ const currencyFormat = new Intl.NumberFormat("en-US", {
 
 export function CartDrawer() {
   const { items, removeItem, updateQuantity, clearCart, totalLots, cartOpen, setCartOpen } = useCart()
+  const role = useUserRole()
 
   const isOpen = cartOpen
 
   const close = () => setCartOpen(false)
 
   const totalLotsCount = totalLots()
-  const cartSubtotal = items.reduce((sum, i) => sum + Number(i.product.retail_price_per_lot) * i.quantity, 0)
+  // Prices relabel live as quantities cross the 10-lot threshold (or when an
+  // approved user's role resolves): the backend /checkout charge uses the same
+  // rule via lib/pricing.ts <-> backend/app/adapters/pricing.py.
+  const linePrices = items.map((item) =>
+    resolvePrice(item.product, item.quantity, role, totalLotsCount)
+  )
+  const lineTiers = items.map((item) =>
+    resolveTier(item.product, item.quantity, role, totalLotsCount)
+  )
+  const cartSubtotal = items.reduce((sum, i, idx) => sum + linePrices[idx] * i.quantity, 0)
 
   return (
     <div
@@ -62,8 +74,9 @@ export function CartDrawer() {
             </div>
           )}
 
-          {items.map((item) => {
-            const price = Number(item.product.retail_price_per_lot)
+          {items.map((item, idx) => {
+            const price = linePrices[idx]
+            const tier = lineTiers[idx]
 
             return (
               <div key={item.product.id} className="flex gap-2 border border-border p-3 max-[400px]:flex-col max-[400px]:gap-2">
@@ -72,7 +85,7 @@ export function CartDrawer() {
                     {item.product.title}
                   </p>
                   <p className="font-mono text-xs text-muted-foreground">
-                    RETAIL &mdash; {currencyFormat.format(price)} / lot
+                    {tier} &mdash; {currencyFormat.format(price)} / lot
                   </p>
                   <p className="text-xs text-muted-foreground">
                     Stock: {item.product.available_stock_lots} lots

@@ -5,6 +5,8 @@ import { ArrowLeft, ImageOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { CheckoutButton } from "@/components/checkout-button"
 import { useCart } from "@/hooks/useCart"
+import { useUserRole } from "@/hooks/useUserRole"
+import { resolvePrice, resolveTier } from "@/lib/pricing"
 
 const currencyFormat = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -20,8 +22,21 @@ const gradeColors: Record<string, string> = {
 
 export function CheckoutPage() {
   const { items, totalLots } = useCart()
+  const role = useUserRole()
 
   const totalLotsCount = totalLots()
+  const linePrices = items.map((item) =>
+    resolvePrice(item.product, item.quantity, role, totalLotsCount)
+  )
+  const lineTiers = items.map((item) =>
+    resolveTier(item.product, item.quantity, role, totalLotsCount)
+  )
+  const uniqueTiers = Array.from(new Set(lineTiers))
+  const summaryTier = uniqueTiers.length === 1 ? uniqueTiers[0] : "MIXED"
+  const totalAmount = items.reduce(
+    (sum, i, idx) => sum + linePrices[idx] * i.quantity,
+    0
+  )
 
   if (items.length === 0) {
     return (
@@ -50,8 +65,9 @@ export function CheckoutPage() {
       </h1>
 
       <div className="mb-8 space-y-2">
-        {items.map((item) => {
-          const price = Number(item.product.retail_price_per_lot)
+        {items.map((item, idx) => {
+          const price = linePrices[idx]
+          const tier = lineTiers[idx]
           const image = item.product.images?.[0]
 
           return (
@@ -80,7 +96,7 @@ export function CheckoutPage() {
                   {item.product.title}
                 </p>
                 <p className="font-mono text-xs text-muted-foreground">
-                  RETAIL &mdash; {currencyFormat.format(price)} / lot
+                  {tier} &mdash; {currencyFormat.format(price)} / lot
                 </p>
               </div>
               <div className="text-right shrink-0">
@@ -101,15 +117,17 @@ export function CheckoutPage() {
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Total lots</span>
             <span className="font-mono font-medium text-foreground">{totalLotsCount}</span>
-            </div>
+          </div>
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Pricing tier</span>
-            <span className="font-mono font-medium text-foreground">RETAIL</span>
+            <span className="font-mono font-medium text-foreground">
+              {summaryTier}
+            </span>
           </div>
           <div className="flex justify-between border-t border-border pt-3 font-display text-lg font-bold text-foreground">
             <span>Total</span>
             <span className="font-mono">
-              {currencyFormat.format(items.reduce((sum, i) => sum + Number(i.product.retail_price_per_lot) * i.quantity, 0))}
+              {currencyFormat.format(totalAmount)}
             </span>
           </div>
         </div>

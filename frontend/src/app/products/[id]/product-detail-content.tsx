@@ -9,8 +9,9 @@ import {
   Dialog,
   DialogContent,
 } from "@/components/ui/dialog"
-import type { Product } from "@/types"
+import type { Product, UserRole } from "@/types"
 import { ProductCard } from "@/components/product-card"
+import { resolvePrice, resolveTier } from "@/lib/pricing"
 
 const currencyFormat = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -28,15 +29,29 @@ interface ProductDetailContentProps {
   product: Product
   relatedPool: Product[]
   isAdmin?: boolean
+  role?: UserRole | null
 }
 
-export function ProductDetailContent({ product, relatedPool, isAdmin }: ProductDetailContentProps) {
+export function ProductDetailContent({ product, relatedPool, isAdmin, role = null }: ProductDetailContentProps) {
   const addItem = useCart((s) => s.addItem)
+  const cartItems = useCart((s) => s.items)
   const inStock = product.available_stock_lots > 0
   const [imgError, setImgError] = useState<Record<number, boolean>>({})
   const [selectedImage, setSelectedImage] = useState(0)
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const grade = gradeConfig[product.grade]
+
+  // Applicable tier for THIS shopper, using the shared pricing mirror
+  // (lib/pricing.ts <-> backend/app/adapters/pricing.py). Quantity is the
+  // current cart line for this product, else the minimum qualifying purchase;
+  // total lots includes this line so an approved user / 10+ bulk order is
+  // reflected live in the highlighted tier and the mobile bottom-bar price.
+  const existingLine = cartItems.find((i) => i.product.id === product.id)
+  const displayQty = existingLine ? existingLine.quantity : Math.max(product.minimum_wholesale_lots, 1)
+  const prospectiveTotal =
+    cartItems.reduce((sum, i) => sum + i.quantity, 0) + (existingLine ? 0 : displayQty)
+  const displayTier = resolveTier(product, displayQty, role, prospectiveTotal)
+  const displayPrice = resolvePrice(product, displayQty, role, prospectiveTotal)
 
   const images = product.images?.length ? product.images : []
   const specs = product.hardware_specifications
@@ -183,7 +198,7 @@ export function ProductDetailContent({ product, relatedPool, isAdmin }: ProductD
       const [a, b] = [e.touches[0], e.touches[1]]
       const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)
       e.preventDefault()
-      setScale((prev) => clampScale(pinchBase.current!.scale * (dist / pinchBase.current!.dist)))
+      setScale(() => clampScale(pinchBase.current!.scale * (dist / pinchBase.current!.dist)))
     }
   }, [])
 
@@ -444,23 +459,39 @@ export function ProductDetailContent({ product, relatedPool, isAdmin }: ProductD
           )}
 
           <div className="mt-6 space-y-3 rounded-sm border border-border bg-card p-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Retail price</span>
+            <div className={`flex items-center justify-between ${displayTier === "RETAIL" ? "rounded-sm bg-accent/10 px-2 py-1" : ""}`}>
+              <span className="text-sm text-muted-foreground">
+                Retail price
+                {displayTier === "RETAIL" && <span className="ml-2 font-mono text-[10px] font-bold text-accent">YOUR TIER</span>}
+              </span>
               <span className="font-mono text-lg font-bold text-foreground tabular-nums">
                 {currencyFormat.format(Number(product.retail_price_per_lot))}
                 <span className="ml-1 text-sm font-normal text-muted-foreground">/lot</span>
               </span>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Wholesale price</span>
+            <div className={`flex items-center justify-between ${displayTier === "WHOLESALE" ? "rounded-sm bg-accent/10 px-2 py-1" : ""}`}>
+              <span className="text-sm text-muted-foreground">
+                Wholesale price (10+ lots)
+                {displayTier === "WHOLESALE" && <span className="ml-2 font-mono text-[10px] font-bold text-accent">YOUR TIER</span>}
+              </span>
               <span className="font-mono text-lg font-bold text-primary tabular-nums">
                 {currencyFormat.format(Number(product.wholesale_price_per_lot))}
                 <span className="ml-1 text-sm font-normal text-muted-foreground">/lot</span>
               </span>
             </div>
+            <div className={`flex items-center justify-between ${displayTier === "APPROVED" ? "rounded-sm bg-accent/10 px-2 py-1" : ""}`}>
+              <span className="text-sm text-muted-foreground">
+                Approved price
+                {displayTier === "APPROVED" && <span className="ml-2 font-mono text-[10px] font-bold text-accent">YOUR TIER</span>}
+              </span>
+              <span className="font-mono text-lg font-bold text-primary tabular-nums">
+                {currencyFormat.format(Number(product.approved_price_per_lot))}
+                <span className="ml-1 text-sm font-normal text-muted-foreground">/lot</span>
+              </span>
+            </div>
             {product.minimum_wholesale_lots > 1 && (
               <p className="text-xs text-muted-foreground">
-                Wholesale pricing requires minimum {product.minimum_wholesale_lots} lots
+                Discount pricing requires minimum {product.minimum_wholesale_lots} lots per line
               </p>
             )}
             <div className="border-t border-border pt-3 flex items-center justify-between">
@@ -489,9 +520,9 @@ export function ProductDetailContent({ product, relatedPool, isAdmin }: ProductD
           <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95 p-4 shadow-lg backdrop-blur-sm lg:hidden">
             <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
               <div>
-                <p className="text-xs text-muted-foreground">Total</p>
+                <p className="text-xs text-muted-foreground">{displayTier}</p>
                 <p className="font-display text-lg font-bold text-foreground tabular-nums">
-                  {currencyFormat.format(Number(product.retail_price_per_lot))}
+                  {currencyFormat.format(displayPrice)}
                   <span className="ml-1 text-sm font-normal text-muted-foreground">/lot</span>
                 </p>
               </div>

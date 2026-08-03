@@ -43,6 +43,7 @@ def test_get_headers():
     assert "title" in headers
     assert "sku" in headers
     assert "retail_price_per_lot" in headers
+    assert "approved_price_per_lot" in headers
 
 
 def test_get_template_row():
@@ -52,6 +53,7 @@ def test_get_template_row():
     assert row["title"] == "Example Product"
     assert row["sku"] == "EX-001"
     assert row["grade"] == "Grade_A"
+    assert row["approved_price_per_lot"] == "149.99"
 
 
 def test_validate_row_valid():
@@ -189,6 +191,71 @@ def test_validate_row_negative_min_wholesale():
     assert any("minimum wholesale lots" in e.lower() for e in errs)
 
 
+def test_validate_row_approved_price_valid():
+    from app.adapters.row_validator import validate_row
+
+    row = {
+        "title": "Widget",
+        "sku": "WD-001",
+        "retail_price_per_lot": "100.00",
+        "wholesale_price_per_lot": "80.00",
+        "approved_price_per_lot": "70.00",
+        "available_stock_lots": "10",
+    }
+    validated, errs = validate_row(row)
+    assert errs == []
+    assert validated["approved_price_per_lot"] == 70.0
+
+
+def test_validate_row_approved_price_blank_defaults_to_wholesale():
+    """Backward compat: a blank approved column parses to None and the
+    normalizer falls back to the wholesale value before insert."""
+    from app.adapters.row_validator import validate_row
+
+    row = {
+        "title": "Widget",
+        "sku": "WD-001",
+        "retail_price_per_lot": "100.00",
+        "wholesale_price_per_lot": "80.00",
+        "approved_price_per_lot": "",
+        "available_stock_lots": "10",
+    }
+    validated, errs = validate_row(row)
+    assert errs == []
+    assert validated["approved_price_per_lot"] is None
+
+
+def test_validate_row_approved_price_above_wholesale_rejected():
+    """Mirror of the products_approved_price_check DB CHECK."""
+    from app.adapters.row_validator import validate_row
+
+    row = {
+        "title": "Widget",
+        "sku": "WD-001",
+        "retail_price_per_lot": "100.00",
+        "wholesale_price_per_lot": "80.00",
+        "approved_price_per_lot": "90.00",
+        "available_stock_lots": "10",
+    }
+    validated, errs = validate_row(row)
+    assert any("approved price must be <= wholesale price" in e.lower() for e in errs)
+
+
+def test_validate_row_approved_price_non_positive_rejected():
+    from app.adapters.row_validator import validate_row
+
+    row = {
+        "title": "Widget",
+        "sku": "WD-001",
+        "retail_price_per_lot": "100.00",
+        "wholesale_price_per_lot": "80.00",
+        "approved_price_per_lot": "-5",
+        "available_stock_lots": "10",
+    }
+    validated, errs = validate_row(row)
+    assert any("approved price" in e.lower() for e in errs)
+
+
 def test_normalize_row_basic():
     from app.adapters.row_normalizer import normalize_row
 
@@ -205,6 +272,24 @@ def test_normalize_row_basic():
     assert result["images"] is None
     assert result["tags"] is None
     assert result["hardware_specifications"] == {}
+    # Old CSV rows without the approved column fall back to wholesale so the
+    # insert satisfies the NOT NULL column.
+    assert result["approved_price_per_lot"] == 80.0
+
+
+def test_normalize_row_keeps_approved_price():
+    from app.adapters.row_normalizer import normalize_row
+
+    row = {
+        "title": "Widget",
+        "sku": "WD-001",
+        "retail_price_per_lot": 100.0,
+        "wholesale_price_per_lot": 80.0,
+        "approved_price_per_lot": 70.0,
+        "available_stock_lots": 10,
+    }
+    result = normalize_row(row)
+    assert result["approved_price_per_lot"] == 70.0
 
 
 def test_normalize_row_with_optional_fields():

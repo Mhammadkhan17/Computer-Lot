@@ -25,6 +25,7 @@ export interface Product {
   items_per_lot: number
   retail_price_per_lot: number
   wholesale_price_per_lot: number
+  approved_price_per_lot: number
   minimum_wholesale_lots: number
   available_stock_lots: number
   manifest_file_url?: string
@@ -122,4 +123,4 @@ export interface CsvImportError {
   reason: string
 }
 
-export type ProductCsvColumn = keyof Pick<Product, "title" | "sku" | "description" | "grade" | "items_per_lot" | "retail_price_per_lot" | "wholesale_price_per_lot" | "minimum_wholesale_lots" | "available_stock_lots">
+export type ProductCsvColumn = keyof Pick<Product, "title" | "sku" | "description" | "grade" | "items_per_lot" | "retail_price_per_lot" | "wholesale_price_per_lot" | "approved_price_per_lot" | "minimum_wholesale_lots" | "available_stock_lots">

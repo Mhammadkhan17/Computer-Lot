@@ -19,10 +19,14 @@ from app.utils.ws_manager import get_manager
 
 
 def _make_token(payload_override: dict | None = None) -> str:
+    # The JWT role claim must be "authenticated" (L-R3-1 fail-closed local
+    # verification). Admin authority comes from the profiles table row that
+    # the route fetches via get_user_supabase, not from the JWT role claim.
     payload = {
         "sub": "admin-user",
-        "role": "admin",
+        "role": "authenticated",
         "aud": "authenticated",
+        "iss": settings.supabase_url,
         "exp": 9999999999,
         **(payload_override or {}),
     }
@@ -110,7 +114,7 @@ class TestAdminApprove:
         assert resp.json()["status"] == "approved"
 
     def test_approve_rejects_non_admin(self):
-        token = _make_token({"sub": "retail-user", "role": "retail"})
+        token = _make_token({"sub": "retail-user"})
         resp = TestClient(app).post(
             "/admin/profiles/user-456/approve",
             headers={"Authorization": f"Bearer {token}"},
@@ -125,7 +129,7 @@ class TestAdminReject:
         assert resp.json()["status"] == "rejected"
 
     def test_reject_rejects_non_admin(self):
-        token = _make_token({"sub": "retail-user", "role": "retail"})
+        token = _make_token({"sub": "retail-user"})
         resp = TestClient(app).post(
             "/admin/profiles/user-456/reject",
             headers={"Authorization": f"Bearer {token}"},
@@ -206,7 +210,7 @@ class TestAdminOrderStatus:
             app.dependency_overrides.clear()
 
     def test_update_status_rejects_non_admin(self):
-        token = _make_token({"sub": "retail-user", "role": "retail"})
+        token = _make_token({"sub": "retail-user"})
         resp = TestClient(app).patch(
             "/admin/orders/order-789/status",
             json={"status": "completed"},
@@ -221,6 +225,159 @@ class TestAdminOrderStatus:
             headers=AUTH_HEADER,
         )
         assert resp.status_code == 422
+
+
+class TestAdminOrderStatusStateMachine:
+    """H-R3-1: the status route must enforce the order state machine so a
+    cancelled order stays terminal and a completed order cannot be reopened
+    (which would re-open an order whose stock was already restored)."""
+
+    def _patch(self, order_status: str, new_status: str, token=None):
+        mock_supabase = MagicMock()
+        mock_supabase.rpc.return_value.execute.return_value.data = {
+            "status": "cancelled",
+            "readable_order_id": 42,
+            "user_id": "retail-user",
+        }
+
+        def table_side_effect(name):
+            if name == "profiles":
+                t = MagicMock()
+                t.select.return_value.eq.return_value.single.return_value.execute.return_value.data = {
+                    "role": "admin"
+                }
+                return t
+            if name == "orders":
+                t = MagicMock()
+                t.select.return_value.eq.return_value.execute.return_value.data = [
+                    {"user_id": "retail-user", "readable_order_id": 42, "status": order_status}
+                ]
+                t.update.return_value.eq.return_value.execute.return_value.data = [
+                    {"id": "order-789", "status": new_status}
+                ]
+                return t
+            return MagicMock()
+
+        mock_supabase.table.side_effect = table_side_effect
+        app.dependency_overrides[get_user_supabase] = lambda: mock_supabase
+        try:
+            return TestClient(app).patch(
+                "/admin/orders/order-789/status",
+                json={"status": new_status},
+                headers=AUTH_HEADER,
+            )
+        finally:
+            app.dependency_overrides.clear()
+
+    def test_cancelled_order_is_terminal(self):
+        resp = self._patch("cancelled", "processing")
+        assert resp.status_code == 409
+        assert "terminal" in resp.json()["detail"]
+
+    def test_completed_order_cannot_reopen(self):
+        for target in ("pending_whatsapp", "processing"):
+            resp = self._patch("completed", target)
+            assert resp.status_code == 409
+            assert "reopen" in resp.json()["detail"]
+
+    def test_completed_to_cancelled_allowed(self):
+        resp = self._patch("completed", "cancelled")
+        assert resp.status_code == 200
+
+    def test_pending_to_processing_allowed(self):
+        resp = self._patch("pending_whatsapp", "processing")
+        assert resp.status_code == 200
+
+    def test_cancel_rpc_reports_already_cancelled_or_missing(self):
+        mock_supabase = MagicMock()
+        mock_supabase.rpc.return_value.execute.return_value.data = {
+            "status": "already_cancelled_or_missing",
+            "order_id": "order-789",
+        }
+        mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = {
+            "role": "admin"
+        }
+        app.dependency_overrides[get_user_supabase] = lambda: mock_supabase
+        try:
+            resp = TestClient(app).patch(
+                "/admin/orders/order-789/status",
+                json={"status": "cancelled"},
+                headers=AUTH_HEADER,
+            )
+        finally:
+            app.dependency_overrides.clear()
+        assert resp.status_code == 409
+        assert "already" in resp.json()["detail"].lower()
+
+    def test_cancel_rpc_reports_not_found(self):
+        mock_supabase = MagicMock()
+        mock_supabase.rpc.return_value.execute.return_value.data = {"status": "not_found"}
+        mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = {
+            "role": "admin"
+        }
+        app.dependency_overrides[get_user_supabase] = lambda: mock_supabase
+        try:
+            resp = TestClient(app).patch(
+                "/admin/orders/order-789/status",
+                json={"status": "cancelled"},
+                headers=AUTH_HEADER,
+            )
+        finally:
+            app.dependency_overrides.clear()
+        assert resp.status_code == 404
+
+    def test_non_admin_cannot_reach_cancel_rpc(self):
+        """M-R3-1: a non-admin is denied at the route before any RPC call."""
+        mock_supabase = MagicMock()
+        rpc_mock = MagicMock()
+        mock_supabase.rpc = rpc_mock
+        app.dependency_overrides[get_user_supabase] = lambda: mock_supabase
+        token = _make_token({"sub": "retail-user"})
+        try:
+            resp = TestClient(app).patch(
+                "/admin/orders/order-789/status",
+                json={"status": "cancelled"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        finally:
+            app.dependency_overrides.clear()
+        assert resp.status_code == 403
+        rpc_mock.assert_not_called()
+
+    def test_non_admin_cannot_reach_expire_rpc(self):
+        """M-R3-1: expire_pending_orders is admin-only at the route."""
+        mock_supabase = MagicMock()
+        rpc_mock = MagicMock()
+        mock_supabase.rpc = rpc_mock
+        app.dependency_overrides[get_user_supabase] = lambda: mock_supabase
+        token = _make_token({"sub": "retail-user"})
+        try:
+            resp = TestClient(app).post(
+                "/admin/expire-orders",
+                json={"older_than_hours": 24},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        finally:
+            app.dependency_overrides.clear()
+        assert resp.status_code == 403
+        rpc_mock.assert_not_called()
+
+    def test_non_admin_cannot_reach_role_rpc(self):
+        """M-R3-1: admin_set_profile_role is admin-only at the route."""
+        mock_supabase = MagicMock()
+        rpc_mock = MagicMock()
+        mock_supabase.rpc = rpc_mock
+        app.dependency_overrides[get_user_supabase] = lambda: mock_supabase
+        token = _make_token({"sub": "retail-user"})
+        try:
+            resp = TestClient(app).post(
+                "/admin/profiles/user-456/approve",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        finally:
+            app.dependency_overrides.clear()
+        assert resp.status_code == 403
+        rpc_mock.assert_not_called()
 
 
 class TestAdminExpireOrders:
@@ -239,7 +396,7 @@ class TestAdminExpireOrders:
         assert resp.json()["expired"] == 3
 
     def test_expire_orders_rejects_non_admin(self):
-        token = _make_token({"sub": "retail-user", "role": "retail"})
+        token = _make_token({"sub": "retail-user"})
         resp = TestClient(app).post("/admin/expire-orders", headers={"Authorization": f"Bearer {token}"})
         assert resp.status_code == 403
 
@@ -263,7 +420,7 @@ class TestAdminRateLimit:
 
 class TestAdminProducts:
     def test_import_rejects_non_admin(self):
-        token = _make_token({"sub": "retail-user", "role": "retail"})
+        token = _make_token({"sub": "retail-user"})
         resp = TestClient(app).post(
             "/admin/products/import",
             files={"file": ("test.csv", b"title,sku\n", "text/csv")},
@@ -347,4 +504,8 @@ class TestAdminProducts:
         assert call_args["sku"] == "CPU-999"
         assert call_args["retail_price_per_lot"] == 199.99
         assert call_args["wholesale_price_per_lot"] == 149.99
+        # Old CSVs without the approved_price_per_lot column must still work:
+        # the normalizer defaults it to the wholesale price (migration-009
+        # backfill semantics) so the NOT NULL column is always satisfied.
+        assert call_args["approved_price_per_lot"] == 149.99
         assert call_args["available_stock_lots"] == 10
