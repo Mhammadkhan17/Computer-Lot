@@ -344,3 +344,19 @@ def test_product_inserter_count(monkeypatch):
     count = insert_products(mock_supabase, rows)
     assert count == 2
     assert mock_table.insert.call_count == 2
+
+
+def test_validate_row_wholesale_above_retail_rejected():
+    """Mirror of the products_wholesale_price_check DB CHECK (migration 010)."""
+    from app.adapters.row_validator import validate_row
+
+    row = {
+        "title": "T",
+        "sku": "SKU-1",
+        "grade": "Grade_A",
+        "retail_price_per_lot": "100.00",
+        "wholesale_price_per_lot": "120.00",
+        "available_stock_lots": "10",
+    }
+    _, errs = validate_row(row)
+    assert any("wholesale price must be <= retail price" in e.lower() for e in errs)

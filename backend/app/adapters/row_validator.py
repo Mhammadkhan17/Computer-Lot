@@ -24,6 +24,12 @@ def validate_row(row: dict) -> tuple[dict, list[str]]:
     if wholesale_err:
         errs.append(wholesale_err)
 
+    # Migration-010 mirror: wholesale can never exceed retail (mirror of the
+    # products_wholesale_price_check DB CHECK). Only enforced when both parsed
+    # successfully so we don't double-report the earlier parse errors.
+    if retail is not None and wholesale is not None and wholesale > retail:
+        errs.append("Wholesale price must be <= retail price")
+
     # Three-tier pricing: approved_price_per_lot is OPTIONAL in the CSV.
     # Blank defaults to the wholesale value (matching the migration-009
     # backfill); when provided it must be > 0 and <= wholesale (mirror of the
