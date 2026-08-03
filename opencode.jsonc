@@ -1,6 +1,17 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["./.opencode/plugin/ecc.ts"],
+  "plugin": [
+    "./.opencode/plugin/ecc.ts",
+    "superpowers@git+https://github.com/obra/superpowers.git",
+    "opencode-pty"
+  ],
+  "permission": {
+    "bash": {
+      "npm run build": "allow",
+      "npm run lint": "allow",
+      "npx tsc --noEmit": "allow"
+    }
+  },
   "mcp": {
     "sequential-thinking": {
       "type": "local",
