@@ -10,7 +10,7 @@
 | **Grade_A / Grade_B / Grade_C / For_Parts** | Product condition grading from best (A) to worst (For_Parts = damaged/as-is). |
 | **Minimum Wholesale Lots** | Per-product threshold. Applies to ALL discount tiers — a user must buy at least this many lots of a product to get its wholesale or approved price. |
 | **Total Lots Threshold** | Order-wide minimum of 10 lots for the wholesale tier. Sum of all item quantities in the order. Available to any signed-in user, including admins. |
-| **Approved Price** | Per-product price (`approved_price_per_lot`) paid by `wholesale_approved` users on any order size (subject to per-product minimums). Must be ≤ the wholesale price. |
+| **Approved Price** | Per-product price (`approved_price_per_lot`) paid by `wholesale_approved` users on any order size (subject to per-product minimums). Must be ≤ the wholesale price, which must be ≤ the retail price. Set it lower than wholesale to give approved buyers a real discount — the default equals wholesale, so no discount until the merchant edits it. |
 | **Hybrid Pricing** | Pricing model where a single order can mix retail, wholesale, and approved line items based on per-product and per-order thresholds. |
 | **WhatsApp Fulfillment** | Order delivery model — no payment gateway. Orders generate a WhatsApp Business deep link for manual merchant fulfillment. |
 | **Atomic Stock Decrement** | PostgreSQL function (`decrement_stock_inventory`) that safely reduces stock with a built-in availability check. |

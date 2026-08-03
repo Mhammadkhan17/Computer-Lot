@@ -24,8 +24,11 @@ Supercedes the original decision. Authoritative rule (backend `app/adapters/pric
 - **Admin follows the uniform rule** (treated like any user at ≥ 10 lots → wholesale). No special case.
 - **Per-product `minimum_wholesale_lots` applies to ALL tiers** (cannot buy 1 lot of a 5-min product at a tier price).
 - `approved_price_per_lot <= wholesale_price_per_lot` enforced by DB CHECK (`products_approved_price_check`, migration 009) and mirrored in form/CSV validation.
-- Backfill: existing products get `approved_price_per_lot = wholesale_price_per_lot`, so no price changes until the merchant edits them.
+- Backfill (migration 009): existing products got `approved_price_per_lot = wholesale_price_per_lot`. **This DID change pricing for `wholesale_approved` users on orders under 10 lots** — every qualifying line went from retail to wholesale. The merchant must set `approved_price_per_lot` deliberately (lower than wholesale) to control approved-tier margin.
 - Product cards keep the two retail/wholesale rows; the approved tier appears on the product detail page, cart, and checkout.
+- `wholesale_price_per_lot <= retail_price_per_lot` enforced by DB CHECK (`products_wholesale_price_check`, migration 010) and mirrored in form/CSV validation; the pricing code never charges above retail even for stale data.
+
+**Merchant action required:** after the three-tier rollout, existing `wholesale_approved` customers are now paying wholesale pricing on orders under 10 lots. Review and set `approved_price_per_lot` (below wholesale) to define the approved-tier discount, or keep it equal to wholesale to treat approved buyers like volume buyers.
 
 **Consequences:**
 - A single order can have mixed pricing (some lines retail, some wholesale/approved).

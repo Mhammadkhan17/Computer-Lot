@@ -3,6 +3,8 @@
 computer-lot-liquidation/
 ├── frontend/                                 # Next.js 15 App Router Frontend
 │   ├── public/                               # Static assets (logos, icons, hero images)
+│   ├── scripts/                           # Dev/verification scripts
+│   │   └── pricing-parity.mjs             # Node check of lib/pricing.ts vs shared fixture
 │   ├── src/
 │   │   ├── app/                              # App Router routes
 │   │   │   ├── globals.css                   # Tailwind v4 theme + fonts
@@ -34,7 +36,6 @@ computer-lot-liquidation/
 │   │   │           └── products.tsx          # Products table + CSV import section
 │   │   ├── components/
 │   │   │   ├── ui/                           # Shadcn/ui components
-│   │   │   │   ├── avatar.tsx
 │   │   │   │   ├── badge.tsx
 │   │   │   │   ├── button.tsx
 │   │   │   │   ├── card.tsx
@@ -45,7 +46,6 @@ computer-lot-liquidation/
 │   │   │   │   ├── separator.tsx
 │   │   │   │   ├── sheet.tsx
 │   │   │   │   ├── skeleton.tsx
-│   │   │   │   └── table.tsx
 │   │   │   ├── sections/                     # Marketing/homepage sections
 │   │   │   │   ├── hero.tsx
 │   │   │   │   ├── features.tsx
@@ -66,6 +66,7 @@ computer-lot-liquidation/
 │   │   │   └── useWebSocket.ts               # Realtime/WebSocket subscription
 │   │   ├── lib/
 │   │   │   ├── utils.ts                      # cn() utility + helpers
+│   │   │   ├── pricing.ts                    # Client mirror of backend pricing rule (ADR-001)
 │   │   │   ├── dashboard-data.ts             # Server/client shared read seam
 │   │   │   └── product-events.ts             # broadcastProductUpdate
 │   │   ├── utils/
