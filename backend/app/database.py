@@ -1,6 +1,7 @@
 from fastapi import Depends
+import httpx
 from postgrest._sync.client import SyncPostgrestClient
-from postgrest.utils import SyncClient
+from postgrest.constants import DEFAULT_POSTGREST_CLIENT_HEADERS
 from supabase import create_client, Client
 
 from app.config import settings
@@ -10,23 +11,50 @@ from app.utils.security import get_access_token
 # HTTP/2 connections are being terminated by Supabase server between requests.
 # This is a known upstream issue in the supabase-py client (see:
 # https://github.com/supabase/supabase-py/issues/438).
-# Disable HTTP/2 to use reliable HTTP/1.1 connections instead.
-# Review date: 2026-08-02 — re-evaluate when supabase-py ships a fix.
-_orig_create_session = SyncPostgrestClient.create_session
+#
+# In postgrest 0.19.x the workaround was to replace the `create_session`
+# classmethod. postgrest 2.x (pulled in by supabase-py >= 2.7) no longer has
+# `create_session`; it builds its httpx session inline with `http2=True`.
+# We instead wrap `SyncPostgrestClient.__init__` and inject our own
+# HTTP/1.1 (`http2=False`) http_client, preserving the same behavior.
+_orig_postgrest_init = SyncPostgrestClient.__init__
 
 
-def _patched_create_session(self, base_url, headers, timeout, verify=True):
-    return SyncClient(
-        base_url=base_url,
-        headers=headers,
+def _patched_postgrest_init(
+    self,
+    base_url,
+    *args,
+    schema="public",
+    headers=None,
+    timeout=None,
+    verify=None,
+    proxy=None,
+    http_client=None,
+    **kwargs,
+):
+    if http_client is None:
+        http_client = httpx.Client(
+            base_url=base_url,
+            headers=headers if headers is not None else DEFAULT_POSTGREST_CLIENT_HEADERS,
+            timeout=timeout,
+            verify=verify,
+            follow_redirects=True,
+            http2=False,
+        )
+    _orig_postgrest_init(
+        self,
+        base_url,
+        schema=schema,
+        headers=headers if headers is not None else DEFAULT_POSTGREST_CLIENT_HEADERS,
         timeout=timeout,
         verify=verify,
-        follow_redirects=True,
-        http2=False,
+        proxy=proxy,
+        http_client=http_client,
+        **kwargs,
     )
 
 
-SyncPostgrestClient.create_session = _patched_create_session
+SyncPostgrestClient.__init__ = _patched_postgrest_init
 
 
 def get_supabase() -> Client:

@@ -104,3 +104,22 @@ def test_commit_true_result_returns_data():
 
     result = run_in_transaction(supabase, _order_data(), _items())
     assert result["commit"] is True
+
+
+def test_open_order_cap_result_raises_400():
+    """M-R3-2: the create_order RPC returns a typed open_order_cap result;
+    the adapter maps it to a 400 with a user-friendly message."""
+    from app.adapters.txn import run_in_transaction
+
+    supabase = _mock_supabase(
+        {
+            "commit": False,
+            "open_order_cap": True,
+            "open_orders": 20,
+        }
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        run_in_transaction(supabase, _order_data(), _items())
+    assert exc.value.status_code == 400
+    assert "20" in exc.value.detail

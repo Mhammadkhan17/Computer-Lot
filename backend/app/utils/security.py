@@ -46,24 +46,45 @@ async def verify_jwt(token: str) -> dict:
 
 
 def _verify_jwt_locally(token: str) -> dict:
-    """Fallback JWT verification using the shared secret."""
+    """Fallback JWT verification using the shared secret (fail closed)."""
     try:
         payload = jwt.decode(
             token,
             settings.supabase_jwt_secret,
             algorithms=["HS256"],
-            # verify_aud disabled: Supabase JWTs use the "authenticated" audience
-            # which may not match the expected aud claim in local verification.
+            # aud/iss/role are checked manually below so the fallback fails
+            # closed on every claim the auth server would enforce.
             options={"verify_aud": False},
         )
-        logger.info("JWT verified locally for user: %s", str(payload.get("sub"))[:8])
-        return payload
     except PyJWTError as e:
         logger.error("Local JWT verification failed: %s", e)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
         )
+
+    # Fail-closed claim checks (L-R3-1): a valid Supabase access token must
+    # carry the "authenticated" role and audience and an issuer matching the
+    # project's auth issuer. Anything else is rejected even if the signature
+    # verifies (protects against leaked-secret forgeries and disabled users).
+    auth_issuer = settings.supabase_url.rstrip("/")
+    allowed_issuers = {auth_issuer, f"{auth_issuer}/auth/v1"}
+    if (
+        payload.get("role") != "authenticated"
+        or payload.get("aud") != "authenticated"
+        or payload.get("iss") not in allowed_issuers
+    ):
+        logger.warning(
+            "Local JWT rejected: missing/mismatched role/aud/iss claims for user: %s",
+            str(payload.get("sub"))[:8],
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+        )
+
+    logger.info("JWT verified locally for user: %s", str(payload.get("sub"))[:8])
+    return payload
 
 
 async def get_current_user(

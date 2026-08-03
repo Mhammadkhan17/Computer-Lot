@@ -22,8 +22,9 @@ from app.schemas.order import OrderItemResponse, StockErrorItem
 def _make_token(payload_override=None):
     payload = {
         "sub": "user-123",
-        "role": "retail",
+        "role": "authenticated",
         "aud": "authenticated",
+        "iss": settings.supabase_url,
         "exp": 9999999999,
         **(payload_override or {}),
     }

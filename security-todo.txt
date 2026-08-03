@@ -440,3 +440,191 @@ Cross-cutting (Round 2)
    library deprecations: fastapi/starlette/slowapi async-iscoroutinefunction,
    gotrue deprecation; none from our code).
  Status: [x]
+
+-----------------------------------------------------------------------------
+ ROUND 3 — HIGH/MEDIUM/LOW (H-R3-1 … L-R3-4), 2026-08-02
+-----------------------------------------------------------------------------
+Rules: same as prior rounds (never bypass decrement/increment stock functions;
+atomic all-or-nothing checkout ADR-002; RLS never weakened; service_role
+confined to config.py/database.py/routes/checkout.py; do not edit migrations
+001–006; is_admin() must stay SECURITY DEFINER — INVOKER would recurse inside
+profiles RLS). New migration: supabase/migrations/007_security_round3.sql.
+
+H-R3-1. admin_cancel_order double-restock on non-pending order
+Files:
+- supabase/migrations/007_security_round3.sql
+  * Rewrite admin_cancel_order: SELECT order ... FOR UPDATE; if status is not
+    'pending_whatsapp' → RETURN {success:false, already_cancelled_or_missing:
+    true} WITHOUT restocking (only pending_whatsapp orders are ever restocked).
+  * Restock only when the order actually transitions pending → cancelled;
+    track restock with restocked_at/restocked_why columns + update trigger
+    `enforce_order_status_transitions` rejecting direct
+    {processing,completed} → cancelled UPDATEs (cancellation must go through
+    the admin RPC so restock is atomic and exactly-once).
+  * Idempotency: second call on the same (now cancelled) order returns
+    already_cancelled_or_missing → no double restock.
+- backend/app/routes/admin.py (cancel path) maps already_cancelled_or_missing
+  → 409 (existing) — verified.
+- backend/tests/test_admin.py: cancel of already-cancelled order → no restock.
+Status: [x]
+
+M-R3-1. Three SECURITY DEFINER admin RPCs callable by signed-in users
+Files:
+- supabase/migrations/007_security_round3.sql
+  * is_admin() hardened (covers 1..n pending + approved roles; rejects
+    service_role/postgres callers).
+  * admin_cancel_order, admin_set_profile_role, expire_pending_orders keep
+    authenticated EXECUTE (required: the backend calls them via the user's
+    client + JWT) but all self-guard with is_admin() inside the function body.
+  * Defense-in-depth: REVOKE EXECUTE ON ... FROM service_role for the three
+    admin RPCs (service_role should not need them; ADR-009 hygiene).
+  * Advisors will keep reporting
+    `authenticated_security_definer_function_executable` for these RPCs — that
+    is BY DESIGN (is_admin() is the actual gate; the alternative — removing
+    authenticated EXECUTE — would break the backend admin routes).
+- backend/tests/test_admin.py: non-admin JWT → 403 on every admin route.
+Status: [x]
+
+M-R3-2. expire_pending_orders never auto-runs; open-order cap is a TOCTOU race
+Files:
+- supabase/migrations/007_security_round3.sql
+  * NEW owner-only runner expire_pending_orders_runner(older_hours INT):
+    SECURITY DEFINER, search_path pinned, NO is_admin() gate (it runs as the
+    owner for everyone), REVOKE EXECUTE from PUBLIC/anon/authenticated/
+    service_role → only the owner (postgres/cron) can call it.
+  * Wrapper expire_pending_orders() keeps the is_admin() gate for the admin
+    route (calls the runner internally).
+  * pg_cron: CREATE EXTENSION IF NOT EXISTS pg_cron; cron.schedule(
+    'expire-pending-orders-hourly', '0 * * * *',
+    $cmd$SELECT public.expire_pending_orders_runner(24);$cmd$)
+    → auto-expiry runs every hour. cron job created idempotently via
+    DO $$ ... IF NOT EXISTS cron.job_check ... $$.
+  * create_order rewritten (same signature): pg_advisory_xact_lock(keyed on
+    user id) + SELECT COUNT(*) of the user's open orders inside the same
+    transaction; if >= settings.open_order_cap (20) → RAISE EXCEPTION with
+    SQLSTATE 45000 (transactional, atomic — no race between check and insert).
+- backend/app/adapters/txn.py maps open_order_cap exception → HTTP 400
+  (test_adapters_txn.py).
+- backend/app/adapters/order_intake.py keeps _assert_open_order_cap as a UX
+  pre-check only (never source of truth); the DB cap is authoritative.
+Status: [x]
+
+M-R3-3. In-memory rate limiter multiplies across workers
+Files:
+- backend/app/rate_limit.py
+  * Documented single-process assumption (SlowAPI in-memory storage): under
+    multi-worker (uvicorn --workers N) deployment the effective limit is
+    N × configured; for N=1 (default docker/uvicorn run) it is exact.
+  * _rate_limit_key unchanged (per-user sub → IP fallback).
+- backend/tests/test_rate_limit.py (NEW): key extraction + bucket behavior.
+- NOT fixed with Redis: adding Redis (Upstash) is a new dependency/tooling
+  change → requires project owner approval (AGENTS.md §1). Flagged below.
+Status: [x] (documented; Redis deferred pending approval)
+
+M-R3-4. Known-vulnerable dependencies (npm audit + backend pins)
+Files:
+- frontend/package.json: next ^15.2.0 → ^15.5.22 (installed 15.5.22);
+  overrides: postcss ^8.5.18, sharp ^0.35.0 (next optional dep pulls sharp —
+  overridden to patched line). @hono/node-server (2.0.12) is dev-only
+  (transitive via shadcn → @modelcontextprotocol/sdk) — not in prod graph.
+- backend/requirements.txt: fastapi 0.141.1, starlette 1.3.1, supabase 2.31.0,
+  postgrest 2.31.0, slowapi 0.1.10, psycopg2-binary 2.9.12, pydantic 2.13.4,
+  PyJWT 2.13.0, uvicorn 0.52.1, httpx 0.27.2.
+- Verification: npm audit --omit=dev → 0 vulnerabilities (before AND after —
+  the earlier 5 were dev-only); backend pytest all pass.
+- NEVER ran `npm audit fix --force` (would break Next.js); upgrades done by
+  explicit pin bumps.
+Status: [x]
+
+L-R3-1. Local JWT fallback skips iss/aud/role checks
+Files:
+- backend/app/utils/security.py: _verify_jwt_locally now fail-closed —
+  requires exp, validates iss against BOTH supabase_url and
+  {supabase_url}/auth/v1 (no issuer → reject), validates aud ('authenticated'),
+  and requires role == 'authenticated' (service_role token → reject locally).
+  Falls back to remote /auth/v1/user only on local-failure.
+- backend/tests/test_security.py (NEW): bad/missing iss, aud, role → 401.
+Status: [x]
+
+L-R3-2. products table lacks price/lot CHECK constraints
+Files:
+- supabase/migrations/007_security_round3.sql
+  * products_prices_check: retail_price_per_lot > 0 AND wholesale_price_per_lot
+    > 0 (plain CHECK — verified 0 violating rows live).
+  * products_lots_check: items_per_lot > 0 AND minimum_wholesale_lots > 0.
+- frontend/src/components/product-form.tsx: client-side mirrors (> 0) with
+  clear toast errors before submit (DB remains the source of truth).
+Status: [x]
+
+L-R3-3. Realtime publication config drift
+Files:
+- supabase/config.toml [realtime] enabled = false (local dev default).
+- Hosted project reality: publication `supabase_realtime` includes
+  orders, order_items, products, profiles; frontend useWebSocket.ts
+  subscribes orders/profiles/products. All reads go through RLS and no
+  raw-change payloads with PII beyond order id/status are broadcast by the
+  backend WS (M5 minimal payload). Documented — no code change (Realtime is
+  Supabase-managed on hosted; cannot be disabled via SQL safely).
+Status: [x] (documented)
+
+L-R3-4. No HSTS / upgrade-insecure-requests
+Files:
+- frontend/next.config.mjs: headers() now emits Strict-Transport-Security
+  (max-age=63072000; includeSubDomains; preload) and appends
+  upgrade-insecure-requests to CSP when NODE_ENV=production (dev/localhost
+  keeps plain http working).
+Status: [x]
+
+-----------------------------------------------------------------------------
+ Cross-cutting (Round 3)
+-----------------------------------------------------------------------------
+- New migration: supabase/migrations/007_security_round3.sql (apply via
+  supabase MCP apply_migration → verify constraints/functions/cron live).
+- Verification gate: backend pytest -q (≥138), npx tsc --noEmit (exit 0),
+  npm audit --omit=dev (0 vulns), advisors re-run (expected WARN delta = 0 on
+  the 4 admin-RPC security-definer WARNs — by design), service_role grep
+  confined to config.py/database.py/routes/checkout.py.
+- INTENTIONALLY NOT FIXED (approval required):
+  1) Redis-backed rate limiter (M-R3-3) — new infra dependency (Upstash/Redis).
+  2) Leaked-password protection (L2) — Supabase PRO-PLAN feature (HaveIBeenPwned).
+     Attempt to enable on free plan failed:
+     "Configuring leaked password protection via HaveIBeenPwned.org is available
+     on Pro Plans and up." → WON'T-FIX on current plan; revisit if upgraded.
+- POST-DASHBOARD VERIFICATION (2026-08-02, user action):
+  * H1 CONFIRMED FIXED on hosted: auth/v1/settings now returns
+    mailer_autoconfirm=false (was true) → new signups require email
+    confirmation, matching local config.toml. (No code change needed.)
+  * auth.instances is empty / no SQL-visible auth config on this version → the
+    public auth/v1/settings endpoint is the only programmatic confirmation;
+    advisor lints remain cached ~15 min.
+
+--------------------------------------------------------------------------------
+ POST-ROUND-3 FOLLOW-UP (2026-08-02, user-approved)
+--------------------------------------------------------------------------------
+- #2 next lint CONFIGURED + ENFORCED.
+  Files:
+  - frontend/package.json: "lint" now "eslint ." (next lint is deprecated in
+    Next 15.5); added eslint-config-next@^15.5.22 (devDependency).
+  - frontend/eslint.config.mjs (NEW): FlatCompat over next/core-web-vitals +
+    next/typescript; @next/next/no-img-element disabled — DELIBERATE (project
+    avoids next/image so `sharp` stays out of the tree, see M-R3-4).
+  - Fixed lint findings: product-form.tsx unescaped quotes; removed dead
+    completedOrders (overview.tsx), gradeLabels (product-card.tsx), unused
+    `get` (useUserRole.ts); unused `prev` updater param
+    (product-detail-content.tsx); error.tsx boundary prop disable-comment.
+  - Result: npm run lint → 0 errors / 0 warnings; npx tsc --noEmit → OK.
+- #2 L-R3-3 Realtime publication CLEANED UP.
+  - Audit: useWebSocket.ts (admin dashboard only) subscribes orders/profiles/
+    products as REFETCH TRIGGERS; order_items is subscribed by NOTHING.
+  - Live SQL (hosted ybwbwllmryjdfqvfpcik):
+    ALTER PUBLICATION supabase_realtime DROP TABLE public.order_items; → verified
+    publication now = orders, products, profiles (order_items + its order-line
+    pricing PII removed from the change stream). RLS still gates all events.
+  - profiles/orders/products KEPT (active admin-dashboard signals; admin-only
+    RLS-gated audience — dropping would lose live approval updates for ~zero
+    security gain).
+  - supabase/config.toml [realtime] comment updated to match reality.
+  - Advisors re-run: WARN set unchanged (4× security-definer by design +
+    leaked-password dashboard item) — no new lints from the publication change.
+- NOT DONE: Redis (deferred), leaked-password (manual dashboard action).
+

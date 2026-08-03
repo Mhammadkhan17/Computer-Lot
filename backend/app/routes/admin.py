@@ -99,14 +99,28 @@ async def update_order_status(
         )
 
     if body.status == "cancelled":
+        # Cancel goes through the SECURITY DEFINER RPC (migration 004/007):
+        # it is idempotent and only restocks orders that are still
+        # pending_whatsapp, so a double cancel or a cancel racing with
+        # expire_pending_orders can never restock the same inventory twice.
         cancel_resp = supabase.rpc("admin_cancel_order", {"p_order_id": order_id}).execute()
-        if not cancel_resp.data or cancel_resp.data.get("status") == "not_found":
-            raise HTTPException(status_code=404, detail="Order not found")
+        if not cancel_resp.data:
+            raise HTTPException(status_code=500, detail="Order cancel failed")
         data = cancel_resp.data
+        rpc_status = data.get("status")
+        if rpc_status == "not_found":
+            raise HTTPException(status_code=404, detail="Order not found")
+        if rpc_status == "already_cancelled_or_missing":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Order is not pending_whatsapp; it may already be cancelled",
+            )
+        if rpc_status != "cancelled":
+            raise HTTPException(status_code=500, detail="Order cancel failed")
         readable_order_id = data.get("readable_order_id")
         order_user_id = data.get("user_id")
     else:
-        order_resp = supabase.table("orders").select("user_id, readable_order_id").eq("id", order_id).execute()
+        order_resp = supabase.table("orders").select("user_id, readable_order_id, status").eq("id", order_id).execute()
         order_rows = order_resp.data
         if not order_rows:
             raise HTTPException(status_code=404, detail="Order not found")
@@ -114,6 +128,22 @@ async def update_order_status(
         row = order_rows[0]
         order_user_id = row["user_id"]
         readable_order_id = row["readable_order_id"]
+        current_status = row.get("status")
+
+        # State-machine guard (mirrors the migration-007 DB trigger): a
+        # cancelled order is terminal, and a completed order cannot be
+        # reopened. Without this, an admin could re-open an order whose
+        # stock was already restored on cancel, minting inventory.
+        if current_status == "cancelled":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cannot change the status of a cancelled order (terminal state)",
+            )
+        if current_status == "completed" and body.status in {"pending_whatsapp", "processing"}:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cannot reopen a completed order",
+            )
 
         update_resp = supabase.table("orders").update({"status": body.status}).eq("id", order_id).execute()
         if not update_resp.data:

@@ -2,9 +2,50 @@
 
 All notable changes to this project are documented in this file.
 
-Last updated: 2026-08-02 20:15 UTC
+Last updated: 2026-08-02 21:15 UTC
 
 ## [Unreleased]
+
+### Auth: login/signup fields + error visibility (2026-08-02)
+
+#### Added: Full Name and Phone Number to signup
+The signup form only collected email, password, company name and tax ID — yet the
+backend order-intake reads `customer_phone` from `profiles.phone`
+(`backend/app/adapters/order_intake.py`) for the WhatsApp fulfillment message, so every
+order placed by a user who never entered a phone shipped without a contact number.
+Full Name was also silently derived from the email prefix instead of being a real field.
+
+- `frontend/src/app/login/page.tsx`: signup now collects **Full Name** (required) and
+  **Phone Number** (required, labeled "for WhatsApp fulfillment"); both are passed as
+  Supabase `user_metadata` (`full_name`, `phone`) on `signUp`. Company name and tax ID
+  unchanged.
+- `supabase/migrations/008_signup_phone_full_name.sql` (NEW, never edits 001–007):
+  `handle_new_user` trigger now copies `phone` into `profiles.phone` and stores the
+  real `full_name` (whitespace-only falls back to `'User'`). `supabase/policies.sql`
+  synced to match. Applied live (verified function body + trigger attachment).
+- `profiles.phone` was already covered by the existing column grants, so no policy change
+  was needed.
+
+#### Changed: app-side validation with visible errors
+Previously the form relied on invisible browser tooltips (`required`/`minLength`) and
+Supabase's raw error messages. Errors are now surfaced explicitly in the styled alert
+box (`role="alert"`, `aria-live`):
+
+- **Supabase errors** (bad credentials, "Email not confirmed", "User already registered",
+  auth rate limits, network failures) render as before via `authRes.error.message`.
+- **App-level validation** (`noValidate` + checks before the auth call): invalid email,
+  password < 6 chars, missing full name, and malformed phone all show a clear message in
+  the same alert box instead of a silent failure.
+
+#### Verified
+- Frontend `npx tsc --noEmit`: exit 0; `npm run lint`: 0 errors / 0 warnings.
+- Backend `pytest -q`: **138 passed** (no backend changes).
+- Live DB: migration `signup_phone_full_name` applied; trigger body + attachment
+  verified via `pg_get_functiondef` / `pg_get_triggerdef`.
+
+Note: users who registered before this change still have `profiles.phone` empty and will
+need to supply a number before their orders carry a contact phone (no profile-edit page
+exists yet).
 
 ### Storefront interaction fixes (2026-08-02)
 

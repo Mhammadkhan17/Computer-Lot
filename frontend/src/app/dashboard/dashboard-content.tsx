@@ -16,7 +16,6 @@ function DashboardShell({ initialData }: { initialData?: AdminDashboardData }) {
     orders,
     pendingProfiles,
     products,
-    productCount,
     loading,
     error,
     refresh,
@@ -68,8 +67,8 @@ function DashboardShell({ initialData }: { initialData?: AdminDashboardData }) {
           {activeSection === "overview" && (
             <Overview
               orders={orders}
+              products={products}
               pendingApprovalsCount={pendingProfiles.length}
-              productCount={productCount}
               loading={false}
             />
           )}

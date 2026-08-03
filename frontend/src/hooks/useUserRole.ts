@@ -12,7 +12,7 @@ interface UserRoleState {
   fetchRole: () => Promise<UserRole | null>
 }
 
-export const useUserRoleStore = create<UserRoleState>((set, get) => ({
+export const useUserRoleStore = create<UserRoleState>((set) => ({
   role: null,
   loaded: false,
   setRole: (role) => set({ role, loaded: true }),

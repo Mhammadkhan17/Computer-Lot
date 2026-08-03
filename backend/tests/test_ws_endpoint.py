@@ -12,8 +12,9 @@ from app.utils.ws_manager import get_manager
 def _make_token(payload_override: dict | None = None) -> str:
     payload = {
         "sub": "user-123",
-        "role": "admin",
+        "role": "authenticated",
         "aud": "authenticated",
+        "iss": settings.supabase_url,
         "exp": 9999999999,
         **(payload_override or {}),
     }
@@ -42,7 +43,7 @@ class TestWebSocketEndpoint:
 
     def test_registers_connection_in_manager(self, monkeypatch):
         m = get_manager()
-        token = _make_token({"sub": "ws-test-user", "role": "admin"})
+        token = _make_token({"sub": "ws-test-user"})
         monkeypatch.setattr("app.routes.ws.get_user_supabase", lambda token: _mock_profile_client("admin"))
 
         client = TestClient(app)
@@ -69,7 +70,7 @@ class TestWebSocketEndpoint:
 
     def test_cleanup_on_disconnect(self, monkeypatch):
         m = get_manager()
-        token = _make_token({"sub": "cleanup-test", "role": "retail"})
+        token = _make_token({"sub": "cleanup-test"})
         monkeypatch.setattr("app.routes.ws.get_user_supabase", lambda token: _mock_profile_client("retail"))
 
         client = TestClient(app)

@@ -7,10 +7,15 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { createClient } from "@/utils/supabase/client"
 
+const EMAIL_RE = /^\S+@\S+\.\S+$/
+const PHONE_RE = /^\+?[0-9()\s.-]{7,20}$/
+
 export default function LoginPage() {
+  const [fullName, setFullName] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
+  const [phone, setPhone] = useState("")
   const [companyName, setCompanyName] = useState("")
   const [taxRegId, setTaxRegId] = useState("")
   const [loading, setLoading] = useState(false)
@@ -21,22 +26,47 @@ export default function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setLoading(true)
     setError(null)
     setSignupSuccess(false)
+
+    const trimmedEmail = email.trim()
+    if (!EMAIL_RE.test(trimmedEmail)) {
+      setError("Please enter a valid email address.")
+      return
+    }
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters long.")
+      return
+    }
+
+    if (mode === "signup") {
+      if (fullName.trim().length < 2) {
+        setError("Please enter your full name.")
+        return
+      }
+      if (!PHONE_RE.test(phone.trim())) {
+        setError("Please enter a valid phone number — it is used to contact you for WhatsApp order fulfillment.")
+        return
+      }
+    }
+
+    setLoading(true)
 
     const supabase = createClient()
 
     let authRes
     if (mode === "login") {
-      authRes = await supabase.auth.signInWithPassword({ email, password })
+      authRes = await supabase.auth.signInWithPassword({ email: trimmedEmail, password })
     } else {
-      const meta: Record<string, string> = { full_name: email.split("@")[0] }
-      if (companyName) meta.company_name = companyName
-      if (taxRegId) meta.tax_registration_id = taxRegId
+      const meta: Record<string, string> = {
+        full_name: fullName.trim(),
+        phone: phone.trim(),
+      }
+      if (companyName.trim()) meta.company_name = companyName.trim()
+      if (taxRegId.trim()) meta.tax_registration_id = taxRegId.trim()
 
       authRes = await supabase.auth.signUp({
-        email,
+        email: trimmedEmail,
         password,
         options: { data: meta },
       })
@@ -76,7 +106,7 @@ export default function LoginPage() {
             </p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} noValidate className="space-y-4">
             {error && (
               <div className="flex items-start gap-2.5 border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive" role="alert" aria-live="assertive">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -132,6 +162,32 @@ export default function LoginPage() {
 
             {mode === "signup" && (
               <>
+                <div className="space-y-2">
+                  <label htmlFor="full-name" className="text-sm font-medium text-white">Full Name</label>
+                  <Input
+                    id="full-name"
+                    type="text"
+                    placeholder="Your full name"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    autoComplete="name"
+                    className="border-white/10 bg-white/5 text-white placeholder:text-white/30 focus-visible:border-accent focus-visible:ring-accent"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label htmlFor="phone" className="text-sm font-medium text-white">
+                    Phone Number <span className="text-white/30">(for WhatsApp fulfillment)</span>
+                  </label>
+                  <Input
+                    id="phone"
+                    type="tel"
+                    placeholder="+1 555 000 1234"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    autoComplete="tel"
+                    className="border-white/10 bg-white/5 text-white placeholder:text-white/30 focus-visible:border-accent focus-visible:ring-accent"
+                  />
+                </div>
                 <div className="space-y-2">
                   <label htmlFor="company-name" className="text-sm font-medium text-white">
                     Company Name <span className="text-white/30">(for wholesale)</span>

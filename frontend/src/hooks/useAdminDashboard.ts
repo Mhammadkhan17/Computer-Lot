@@ -73,7 +73,6 @@ export function useAdminDashboard(initialData?: AdminDashboardData) {
     orders,
     pendingProfiles,
     products,
-    productCount: products.length,
     loading,
     error,
     refresh,

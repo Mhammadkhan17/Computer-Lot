@@ -34,6 +34,14 @@ enable_autoconfirm = false
 enabled = false
 
 [realtime]
+# L-R3-3: disabled for LOCAL dev (no realtime server started with `supabase
+# start`). The HOSTED project (ybwbwllmryjdfqvfpcik) manages its own Realtime
+# and the `supabase_realtime` publication includes orders/products/profiles
+# (order_items was dropped 2026-08-02: unused by any client and carries order-
+# line pricing PII). The frontend subscribes via supabase-js (useWebSocket.ts)
+# purely as refetch triggers for the admin dashboard; all reads are RLS-gated
+# and the backend WS broadcasts minimal payloads (M5), so no code change is
+# required for hosted; this flag only controls local dev.
 enabled = false
 
 [analytics]

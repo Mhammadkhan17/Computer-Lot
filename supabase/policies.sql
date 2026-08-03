@@ -103,10 +103,12 @@ AS $$
 DECLARE
     _company_name VARCHAR(255);
     _tax_id VARCHAR(100);
+    _phone VARCHAR(50);
     _role user_role;
 BEGIN
     _company_name := NULLIF(TRIM(NEW.raw_user_meta_data->>'company_name'::text), '');
     _tax_id := NULLIF(TRIM(NEW.raw_user_meta_data->>'tax_registration_id'::text), '');
+    _phone := NULLIF(TRIM(NEW.raw_user_meta_data->>'phone'::text), '');
 
     IF _company_name IS NOT NULL THEN
         _role := 'wholesale_pending';
@@ -114,12 +116,13 @@ BEGIN
         _role := 'retail';
     END IF;
 
-    INSERT INTO public.profiles (id, full_name, company_name, tax_registration_id, role)
+    INSERT INTO public.profiles (id, full_name, company_name, tax_registration_id, phone, role)
     VALUES (
         NEW.id,
-        COALESCE(NEW.raw_user_meta_data->>'full_name', 'User'),
+        COALESCE(NULLIF(TRIM(NEW.raw_user_meta_data->>'full_name'::text), ''), 'User'),
         _company_name,
         _tax_id,
+        _phone,
         _role
     );
     RETURN NEW;

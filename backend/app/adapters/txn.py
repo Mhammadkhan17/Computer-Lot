@@ -40,6 +40,15 @@ def run_in_transaction(supabase: Client, order_data: dict, items: list) -> dict:
         raise HTTPException(status_code=500, detail="Checkout failed, order rolled back")
 
     data = resp.data
+    if data.get("open_order_cap"):
+        open_orders = data.get("open_orders", 0)
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Too many open pending orders ({open_orders}). "
+                "Complete or cancel older orders before placing more."
+            ),
+        )
     if data.get("insufficient_stock"):
         out_of_stock = data.get("out_of_stock") or []
         stock_errors = [
