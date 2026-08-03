@@ -53,7 +53,7 @@ def test_get_template_row():
     assert row["title"] == "Example Product"
     assert row["sku"] == "EX-001"
     assert row["grade"] == "Grade_A"
-    assert row["approved_price_per_lot"] == "149.99"
+    assert row["approved_price_per_lot"] == "139.99"
 
 
 def test_validate_row_valid():

@@ -16,7 +16,7 @@ TEMPLATE_ROW = {
     "items_per_lot": "1",
     "retail_price_per_lot": "199.99",
     "wholesale_price_per_lot": "149.99",
-    "approved_price_per_lot": "149.99",
+    "approved_price_per_lot": "139.99",
     "minimum_wholesale_lots": "5",
     "available_stock_lots": "20",
     "image_urls": "https://example.com/img1.jpg, https://example.com/img2.jpg",

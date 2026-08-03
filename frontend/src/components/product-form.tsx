@@ -202,6 +202,13 @@ export function ProductFormDialog({ mode, product, onSuccess, trigger }: Product
       setSaving(false)
       return
     }
+    // Migration-010 mirror: wholesale can never exceed retail. Reject early so
+    // the admin sees a clear message instead of a DB constraint error.
+    if (wholesalePrice > price) {
+      toast.error("Wholesale price must be less than or equal to the retail price")
+      setSaving(false)
+      return
+    }
     // Three-tier pricing: approved price is optional in the form and defaults
     // to the wholesale value (migration-009 backfill). When provided it must
     // be > 0 and <= wholesale (mirror of products_approved_price_check).
@@ -364,6 +371,9 @@ export function ProductFormDialog({ mode, product, onSuccess, trigger }: Product
             <div className="space-y-1">
               <label htmlFor={fieldId("wholesale-price")} className="text-xs font-medium text-foreground">Wholesale price ($) *</label>
               <Input id={fieldId("wholesale-price")} name="wholesale_price_per_lot" type="number" inputMode="decimal" step="0.01" min="0" value={form.wholesale_price_per_lot} onChange={set("wholesale_price_per_lot")} placeholder="0.00" autoComplete="off" required />
+              <p className="text-xs text-muted-foreground">
+                Paid by any customer whose cart reaches 10+ lots.
+              </p>
             </div>
           </div>
 
@@ -371,7 +381,9 @@ export function ProductFormDialog({ mode, product, onSuccess, trigger }: Product
             <label htmlFor={fieldId("approved-price")} className="text-xs font-medium text-foreground">Approved price ($)</label>
             <Input id={fieldId("approved-price")} name="approved_price_per_lot" type="number" inputMode="decimal" step="0.01" min="0" value={form.approved_price_per_lot} onChange={set("approved_price_per_lot")} placeholder="Same as wholesale if blank" autoComplete="off" />
             <p className="text-xs text-muted-foreground">
-              Paid by wholesale-approved buyers on any order size (min lots still applies). Blank defaults to the wholesale price.
+              Paid by wholesale-approved buyers on any order size (min lots still applies).
+              Set it <span className="font-semibold">lower</span> than the wholesale price
+              to give approved buyers a deeper discount. Blank defaults to the wholesale price.
             </p>
           </div>
 
