@@ -135,7 +135,7 @@ export function CartDrawer() {
                       <Trash2 className="h-4 w-4" aria-hidden="true" />
                     </Button>
                     <span className="font-mono text-sm font-semibold text-foreground max-[400px]:text-xs">
-                      {currencyFormat.format(price * item.quantity)}
+                      {roleLoaded ? currencyFormat.format(price * item.quantity) : "\u2026"}
                     </span>
                   </div>
                 </div>
