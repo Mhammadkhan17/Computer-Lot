@@ -50,3 +50,7 @@ export function useUserRole(): UserRole | null {
 
   return role
 }
+
+export function useUserRoleLoaded(): boolean {
+  return useUserRoleStore((s) => s.loaded)
+}

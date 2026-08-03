@@ -62,6 +62,7 @@ computer-lot-liquidation/
 │   │   ├── hooks/
 │   │   │   ├── useCart.ts                    # Zustand cart store (with persist)
 │   │   │   ├── useUserRole.ts                # Role from profiles (auth-aware)
+│   │   │   │   └── useUserRoleLoaded         # Defer pricing until role resolves
 │   │   │   ├── useAdminDashboard.ts          # Dashboard data module
 │   │   │   └── useWebSocket.ts               # Realtime/WebSocket subscription
 │   │   ├── lib/

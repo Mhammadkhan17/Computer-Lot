@@ -5,7 +5,7 @@ import { ArrowLeft, ImageOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { CheckoutButton } from "@/components/checkout-button"
 import { useCart } from "@/hooks/useCart"
-import { useUserRole } from "@/hooks/useUserRole"
+import { useUserRole, useUserRoleLoaded } from "@/hooks/useUserRole"
 import { resolvePrice, resolveTier } from "@/lib/pricing"
 
 const currencyFormat = new Intl.NumberFormat("en-US", {
@@ -23,6 +23,7 @@ const gradeColors: Record<string, string> = {
 export function CheckoutPage() {
   const { items, totalLots } = useCart()
   const role = useUserRole()
+  const roleLoaded = useUserRoleLoaded()
 
   const totalLotsCount = totalLots()
   const linePrices = items.map((item) =>
@@ -95,16 +96,22 @@ export function CheckoutPage() {
                 <p className="text-sm font-medium text-foreground truncate">
                   {item.product.title}
                 </p>
-                <p className="font-mono text-xs text-muted-foreground">
-                  {tier} &mdash; {currencyFormat.format(price)} / lot
-                </p>
+                {roleLoaded ? (
+                  <p className="font-mono text-xs text-muted-foreground">
+                    {tier} &mdash; {currencyFormat.format(price)} / lot
+                  </p>
+                ) : (
+                  <p className="font-mono text-xs text-muted-foreground animate-pulse">
+                    Checking pricing&hellip;
+                  </p>
+                )}
               </div>
               <div className="text-right shrink-0">
                 <p className="font-mono text-xs text-muted-foreground">
                   QTY {item.quantity}
                 </p>
                 <p className="font-mono font-semibold text-foreground">
-                  {currencyFormat.format(price * item.quantity)}
+                  {roleLoaded ? currencyFormat.format(price * item.quantity) : "\u2026"}
                 </p>
               </div>
             </div>
@@ -121,13 +128,13 @@ export function CheckoutPage() {
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Pricing tier</span>
             <span className="font-mono font-medium text-foreground">
-              {summaryTier}
+              {roleLoaded ? summaryTier : "\u2026"}
             </span>
           </div>
           <div className="flex justify-between border-t border-border pt-3 font-display text-lg font-bold text-foreground">
             <span>Total</span>
             <span className="font-mono">
-              {currencyFormat.format(totalAmount)}
+              {roleLoaded ? currencyFormat.format(totalAmount) : "\u2026"}
             </span>
           </div>
         </div>

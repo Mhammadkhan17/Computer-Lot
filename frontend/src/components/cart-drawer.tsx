@@ -4,7 +4,7 @@ import Link from "next/link"
 import { Minus, Plus, ShoppingCart, Trash2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useCart } from "@/hooks/useCart"
-import { useUserRole } from "@/hooks/useUserRole"
+import { useUserRole, useUserRoleLoaded } from "@/hooks/useUserRole"
 import { resolvePrice, resolveTier } from "@/lib/pricing"
 
 const currencyFormat = new Intl.NumberFormat("en-US", {
@@ -15,6 +15,7 @@ const currencyFormat = new Intl.NumberFormat("en-US", {
 export function CartDrawer() {
   const { items, removeItem, updateQuantity, clearCart, totalLots, cartOpen, setCartOpen } = useCart()
   const role = useUserRole()
+  const roleLoaded = useUserRoleLoaded()
 
   const isOpen = cartOpen
 
@@ -84,9 +85,15 @@ export function CartDrawer() {
                   <p className="truncate text-sm font-medium text-foreground">
                     {item.product.title}
                   </p>
-                  <p className="font-mono text-xs text-muted-foreground">
-                    {tier} &mdash; {currencyFormat.format(price)} / lot
-                  </p>
+                  {roleLoaded ? (
+                    <p className="font-mono text-xs text-muted-foreground">
+                      {tier} &mdash; {currencyFormat.format(price)} / lot
+                    </p>
+                  ) : (
+                    <p className="font-mono text-xs text-muted-foreground animate-pulse">
+                      Checking pricing&hellip;
+                    </p>
+                  )}
                   <p className="text-xs text-muted-foreground">
                     Stock: {item.product.available_stock_lots} lots
                   </p>
@@ -164,7 +171,7 @@ export function CartDrawer() {
 
             <div className="flex items-center justify-between border-t border-border pt-3 font-display text-lg font-bold text-foreground">
               <span>Subtotal</span>
-              <span className="font-mono">{currencyFormat.format(cartSubtotal)}</span>
+              <span className="font-mono">{roleLoaded ? currencyFormat.format(cartSubtotal) : "\u2026"}</span>
             </div>
 
             <div className="flex gap-2">
