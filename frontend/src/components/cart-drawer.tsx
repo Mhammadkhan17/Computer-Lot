@@ -144,6 +144,24 @@ export function CartDrawer() {
               <span className="font-mono font-medium text-foreground">{totalLotsCount}</span>
             </div>
 
+            {role !== "wholesale_approved" && totalLotsCount < 10 && (
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Wholesale pricing</span>
+                  <span>{totalLotsCount}/10 lots</span>
+                </div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full bg-accent"
+                    style={{ width: `${Math.min(100, (totalLotsCount / 10) * 100)}%` }}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Add {10 - totalLotsCount} more lots to unlock wholesale pricing.
+                </p>
+              </div>
+            )}
+
             <div className="flex items-center justify-between border-t border-border pt-3 font-display text-lg font-bold text-foreground">
               <span>Subtotal</span>
               <span className="font-mono">{currencyFormat.format(cartSubtotal)}</span>
