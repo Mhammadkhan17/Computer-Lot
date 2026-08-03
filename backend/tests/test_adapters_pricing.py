@@ -134,3 +134,19 @@ def test_missing_approved_price_key_falls_back_to_wholesale():
     }
     price = adapter(product, quantity=5, role="wholesale_approved", total_lots=5)
     assert price == 80.0
+
+
+def test_wholesale_above_retail_stale_clamped_to_retail():
+    """Defensive: stale payload with wholesale > retail never overcharges."""
+    adapter = make_pricing_adapter()
+    product = _make_product("p1", retail=100.0, wholesale=120.0, min_wholesale=3)
+    price = adapter(product, quantity=5, role="retail", total_lots=10)
+    assert price == 100.0
+
+
+def test_approved_above_retail_stale_clamped_to_retail():
+    """approved <= wholesale but wholesale > retail (stale) -> retail, never above."""
+    adapter = make_pricing_adapter()
+    product = _make_product("p1", retail=100.0, wholesale=120.0, approved=110.0, min_wholesale=3)
+    price = adapter(product, quantity=5, role="wholesale_approved", total_lots=5)
+    assert price == 100.0
