@@ -137,7 +137,11 @@ computer-lot-liquidation/
 │   │   ├── 003_product_images_storage.sql    # Storage bucket + RLS
 │   │   ├── 004_security_hardening.sql        # RLS, SECURITY DEFINER guards
 │   │   ├── 005_expire_pending_orders.sql     # Order expiry RPC
-│   │   └── 006_order_item_upper_bounds.sql   # Order line upper-bound CHECKs
+│   │   ├── 006_order_item_upper_bounds.sql   # Order line upper-bound CHECKs
+│   │   ├── 007_security_round3.sql           # Third round of security hardening
+│   │   ├── 008_signup_phone_full_name.sql    # Signup phone + full name columns
+│   │   ├── 009_approved_price.sql            # Approved-tier wholesale price column
+│   │   └── 010_wholesale_retail_price_guard.sql  # wholesale<=retail CHECK + backfill
 │   ├── seed.sql                              # Sample products & test users
 │   └── policies.sql                          # All RLS policies + auto-profile trigger
 │
