@@ -61,8 +61,7 @@ computer-lot-liquidation/
 │   │   │   └── product-form.tsx              # Add/edit product dialog + image upload
 │   │   ├── hooks/
 │   │   │   ├── useCart.ts                    # Zustand cart store (with persist)
-│   │   │   ├── useUserRole.ts                # Role from profiles (auth-aware)
-│   │   │   │   └── useUserRoleLoaded         # Defer pricing until role resolves
+│   │   │   ├── useUserRole.ts                # Role from profiles (auth-aware) + useUserRoleLoaded
 │   │   │   ├── useAdminDashboard.ts          # Dashboard data module
 │   │   │   └── useWebSocket.ts               # Realtime/WebSocket subscription
 │   │   ├── lib/
