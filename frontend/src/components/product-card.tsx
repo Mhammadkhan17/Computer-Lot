@@ -4,6 +4,7 @@ import { ShoppingCart, ImageOff } from "lucide-react"
 import { useState } from "react"
 import Link from "next/link"
 import { useCart } from "@/hooks/useCart"
+import { useUserRole } from "@/hooks/useUserRole"
 import { Card, CardContent, CardFooter } from "@/components/ui/card"
 import type { Product } from "@/types"
 
@@ -26,6 +27,12 @@ interface ProductCardProps {
 
 export function ProductCard({ product, isAdmin }: ProductCardProps) {
   const addItem = useCart((s) => s.addItem)
+  const role = useUserRole()
+  const isApprovedShopper = role === "wholesale_approved"
+  const secondLabel = isApprovedShopper ? "Approved" : "Wholesale"
+  const secondPrice = isApprovedShopper
+    ? Number(product.approved_price_per_lot)
+    : Number(product.wholesale_price_per_lot)
   const grade = gradeConfig[product.grade]
   const inStock = product.available_stock_lots > 0
   const [imgError, setImgError] = useState(false)
@@ -89,13 +96,16 @@ export function ProductCard({ product, isAdmin }: ProductCardProps) {
             </div>
             <div className="flex items-baseline justify-between gap-2">
               <span className="shrink-0 text-xs text-muted-foreground">
-                Wholesale
+                {secondLabel}
                 {product.minimum_wholesale_lots > 1 && (
                   <span className="ml-1 text-[10px]">/{product.minimum_wholesale_lots}</span>
                 )}
+                {!isApprovedShopper && (
+                  <span className="ml-1 text-[10px]">· 10+ lots</span>
+                )}
               </span>
               <span className="min-w-0 text-right font-mono text-sm font-medium text-primary">
-                {currencyFormat.format(Number(product.wholesale_price_per_lot))}
+                {currencyFormat.format(secondPrice)}
               </span>
             </div>
           </div>
