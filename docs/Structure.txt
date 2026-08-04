@@ -141,7 +141,8 @@ computer-lot-liquidation/
 │   │   ├── 007_security_round3.sql           # Third round of security hardening
 │   │   ├── 008_signup_phone_full_name.sql    # Signup phone + full name columns
 │   │   ├── 009_approved_price.sql            # Approved-tier wholesale price column
-│   │   └── 010_wholesale_retail_price_guard.sql  # wholesale<=retail CHECK + backfill
+│   │   ├── 010_wholesale_retail_price_guard.sql  # wholesale<=retail CHECK + backfill
+│   │   └── 011_apply_for_wholesale.sql           # Self-serve wholesale apply RPC
 │   ├── seed.sql                              # Sample products & test users
 │   └── policies.sql                          # All RLS policies + auto-profile trigger
 │
