@@ -50,7 +50,8 @@ computer-lot-liquidation/
 │   │   │   │   ├── hero.tsx
 │   │   │   │   ├── features.tsx
 │   │   │   │   ├── how-it-works.tsx
-│   │   │   │   └── wholesale.tsx
+│   │   │   │   ├── wholesale.tsx
+│   │   │   │   └── wholesale-apply-button.tsx    # Role-aware wholesale apply button
 │   │   │   ├── navbar.tsx
 │   │   │   ├── profile-dropdown.tsx          # User role-aware profile menu
 │   │   │   ├── site-footer.tsx
@@ -95,7 +96,8 @@ computer-lot-liquidation/
 │   │   │   ├── __init__.py
 │   │   │   ├── order.py                      # Checkout request/response models
 │   │   │   ├── admin.py                      # Admin request/response models
-│   │   │   └── product.py                    # Product models
+│   │   │   ├── product.py                    # Product models
+│   │   │   └── wholesale.py                  # Wholesale apply request/response
 │   │   ├── adapters/
 │   │   │   ├── __init__.py
 │   │   │   ├── pricing.py                    # Hybrid wholesale pricing (ADR-001)
@@ -112,7 +114,8 @@ computer-lot-liquidation/
 │   │   │   ├── __init__.py
 │   │   │   ├── checkout.py                   # POST /checkout (JWT, pricing, stock, txn)
 │   │   │   ├── admin.py                      # Admin endpoints (approve/import/expire/etc.)
-│   │   │   └── ws.py                         # WebSocket endpoint (subprotocol auth)
+│   │   │   ├── ws.py                         # WebSocket endpoint (subprotocol auth)
+│   │   │   └── wholesale.py                  # POST /wholesale/apply (self-serve apply)
 │   │   └── utils/
 │   │       ├── __init__.py
 │   │       ├── security.py                   # JWT verification + auth deps
