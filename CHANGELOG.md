@@ -2,9 +2,62 @@
 
 All notable changes to this project are documented in this file.
 
-Last updated: 2026-08-02 21:15 UTC
+Last updated: 2026-08-04 12:30 UTC
 
 ## [Unreleased]
+
+### Auth: self-serve wholesale apply + role-aware navbar (2026-08-04)
+
+#### Added: self-serve "Apply for Wholesale" flow
+Guests already saw an "Apply for Wholesale" button that bounced everyone to `/login` —
+including users who had *already* applied or been approved. The button is now role-aware,
+and a retail user can submit a real application in one step.
+
+- NEW `supabase/migrations/011_apply_for_wholesale.sql`: SECURITY DEFINER RPC
+  `apply_for_wholesale(p_company_name, p_tax_id)` — atomically flips
+  `retail → wholesale_pending` recording company name / tax registration ID; idempotently
+  returns the caller's status (`applied`/`pending`/`approved`/`admin`/`error`); the
+  `admin` branch guards against an admin being downgraded. `SET search_path = public`,
+  EXECUTE granted to `authenticated` only. Applied live.
+- NEW `supabase/migrations/012_wholesale_apply_grants.sql` (follow-up, applied live):
+  length guards on the RPC (oversize company/tax input returns `{"status":"error"}`
+  instead of a raw Postgres truncation exception) + `REVOKE EXECUTE ... FROM service_role`
+  (restores the migration-007 grant-hygiene contract; live `proacl` is now
+  `postgres`/`authenticated` only).
+- NEW `backend/app/schemas/wholesale.py`: `WholesaleApplyRequest` (`company_name` ≤ 255,
+  not blank; optional `tax_registration_id` ≤ 100) + `WholesaleApplyResponse`.
+- NEW `backend/app/routes/wholesale.py`: `POST /wholesale/apply` — validates the JWT,
+  calls the RPC via the caller's Supabase client (never service_role, ADR-009), maps
+  `applied/pending/approved/admin → 200` and `error → 400`. Registered in `main.py`.
+- NEW `frontend/src/components/sections/wholesale-apply-button.tsx` (`"use client"`):
+  guest → Link to `/login`; retail → apply dialog (Company Name required, Tax ID optional)
+  that POSTs to `/wholesale/apply` with the session Bearer token, then refreshes the role;
+  pending/approved/admin → status dialogs with per-role copy. Replaces the static
+  `<Link href="/login">` in `wholesale.tsx`.
+- NEW `backend/tests/test_wholesale_apply.py`: 8 tests (status mapping, auth rejection,
+  Pydantic 422s) mirroring the `test_admin.py` mocking pattern.
+
+#### Changed: role-aware navbar auth button + URL-driven login mode
+The login page's Sign In / Sign Up mode was private `useState`, so the navbar had no way
+to reflect it — and the logged-out navbar showed only a static "Sign In" link.
+
+- `frontend/src/app/login/page.tsx`: mode is now URL-driven via `useSearchParams()`
+  (`?mode=signup`), so `/login?mode=signup` is directly deep-linkable; the bottom toggle
+  uses `router.replace` instead of `setMode`. Page wrapped in `<Suspense>` (required for
+  `useSearchParams` during prerender).
+- `frontend/src/components/navbar.tsx`: new `AuthLinks` client component (wrapped in
+  `<Suspense>`) renders a single accent button that mirrors the form's bottom toggle —
+  **Sign Up** → `/login?mode=signup` when the sign-in form is showing, **Sign In** →
+  `/login` when the sign-up form is showing, and **Sign In** everywhere else. The old
+  grey/black hover state is gone (single accent button, `hover:bg-accent/90`).
+
+#### Verified (2026-08-04)
+- Backend `pytest`: **172 passed** (164 + 8 new).
+- Frontend `npx tsc --noEmit`, `npm run lint` (0 errors / 0 warnings), `npm run build`:
+  all exit 0.
+- Live DB: migrations `apply_for_wholesale` (011) and `wholesale_apply_grants` (012)
+  applied; `pg_proc` shows `search_path=public` and EXECUTE on `authenticated` only
+  (no anon/public/service_role).
 
 ### Auth: login/signup fields + error visibility (2026-08-02)
 

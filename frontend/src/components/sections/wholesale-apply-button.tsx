@@ -110,8 +110,8 @@ export function WholesaleApplyButton() {
       body: "Wholesale pricing is active on your account — no application needed.",
     },
     admin: {
-      title: "Admin Account",
-      body: "Admin accounts follow the standard pricing rules: wholesale pricing applies automatically at 10+ lots.",
+      title: "Admin Account Detected",
+      body: "You're browsing as an admin account.",
     },
   }
 

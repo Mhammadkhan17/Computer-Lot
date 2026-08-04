@@ -1,12 +1,39 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { Suspense, useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
+import { usePathname, useSearchParams } from "next/navigation"
 import { ShoppingCart, LayoutDashboard } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useCart } from "@/hooks/useCart"
 import { createClient } from "@/utils/supabase/client"
 import { ProfileDropdown } from "@/components/profile-dropdown"
+
+const AUTH_LINK_CLASS =
+  "flex min-h-[44px] items-center bg-accent px-3 text-sm font-semibold text-accent-foreground transition-colors hover:bg-accent/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm"
+
+function AuthLinks() {
+  const searchParams = useSearchParams()
+  const pathname = usePathname()
+
+  const mode = searchParams.get("mode") === "signup" ? "signup" : "login"
+  const onLoginPage = pathname === "/login"
+  const showSignUp = onLoginPage && mode === "login"
+
+  return (
+    <>
+      {showSignUp ? (
+        <Link href="/login?mode=signup" className={AUTH_LINK_CLASS}>
+          Sign Up
+        </Link>
+      ) : (
+        <Link href="/login" className={AUTH_LINK_CLASS}>
+          Sign In
+        </Link>
+      )}
+    </>
+  )
+}
 
 export function Navbar() {
   const totalItems = useCart((s) => s.totalItems())
@@ -109,12 +136,9 @@ export function Navbar() {
               <ProfileDropdown email={user.email} role={user.role} isAdmin={isAdmin} />
             </>
           ) : (
-            <Link
-              href="/login"
-              className="flex min-h-[44px] items-center gap-1.5 px-3 text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            >
-              Sign In
-            </Link>
+            <Suspense fallback={null}>
+              <AuthLinks />
+            </Suspense>
           )}
 
           {!isAdmin && (

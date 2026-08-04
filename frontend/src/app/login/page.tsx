@@ -1,7 +1,7 @@
 "use client"
 
-import { useState } from "react"
-import { useRouter } from "next/navigation"
+import { Suspense, useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Barcode, Eye, EyeOff, AlertCircle, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -11,6 +11,14 @@ const EMAIL_RE = /^\S+@\S+\.\S+$/
 const PHONE_RE = /^\+?[0-9()\s.-]{7,20}$/
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
+  )
+}
+
+function LoginForm() {
   const [fullName, setFullName] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -21,7 +29,8 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [signupSuccess, setSignupSuccess] = useState(false)
-  const [mode, setMode] = useState<"login" | "signup">("login")
+  const searchParams = useSearchParams()
+  const mode = searchParams.get("mode") === "signup" ? "signup" : "login"
   const router = useRouter()
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -242,7 +251,7 @@ export default function LoginPage() {
                   <button
                     type="button"
                     className="font-medium text-accent transition-colors hover:text-accent/80"
-                    onClick={() => { setMode("signup"); setError(null); setSignupSuccess(false) }}
+                    onClick={() => { router.replace("/login?mode=signup"); setError(null); setSignupSuccess(false) }}
                   >
                     Sign up
                   </button>
@@ -253,7 +262,7 @@ export default function LoginPage() {
                   <button
                     type="button"
                     className="font-medium text-accent transition-colors hover:text-accent/80"
-                    onClick={() => { setMode("login"); setError(null); setSignupSuccess(false) }}
+                    onClick={() => { router.replace("/login"); setError(null); setSignupSuccess(false) }}
                   >
                     Sign in
                   </button>
