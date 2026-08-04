@@ -1,5 +1,6 @@
 import { ArrowRight, PackageCheck } from "lucide-react"
 import Link from "next/link"
+import { WholesaleApplyButton } from "@/components/sections/wholesale-apply-button"
 
 export function WholesaleSection() {
   return (
@@ -45,13 +46,7 @@ export function WholesaleSection() {
           </div>
 
           <div className="mt-10 flex flex-wrap justify-center gap-3">
-            <Link
-              href="/login"
-              className="inline-flex items-center gap-2 bg-accent px-5 py-2.5 text-sm font-semibold text-accent-foreground transition-all hover:bg-accent/90"
-            >
-              Apply for Wholesale
-              <ArrowRight className="h-4 w-4" />
-            </Link>
+            <WholesaleApplyButton />
             <Link
               href="/#catalog"
               className="inline-flex items-center gap-2 border border-white/20 px-5 py-2.5 text-sm font-semibold text-white transition-all hover:bg-white/10"
