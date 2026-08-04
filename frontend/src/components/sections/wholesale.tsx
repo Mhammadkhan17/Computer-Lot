@@ -1,4 +1,4 @@
-import { ArrowRight, PackageCheck } from "lucide-react"
+import { PackageCheck } from "lucide-react"
 import Link from "next/link"
 import { WholesaleApplyButton } from "@/components/sections/wholesale-apply-button"
 
