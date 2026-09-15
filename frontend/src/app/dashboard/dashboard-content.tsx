@@ -7,36 +7,18 @@ import { Overview } from "./sections/overview"
 import { OrdersSection } from "./sections/orders"
 import { ApprovalsSection } from "./sections/approvals"
 import { ProductsSection } from "./sections/products"
-import { useAdminDashboard } from "@/hooks/useAdminDashboard"
-import type { AdminDashboardData } from "@/lib/dashboard-data"
+import { SourcingSection } from "./sections/sourcing"
 
-function DashboardShell({ initialData }: { initialData?: AdminDashboardData }) {
+const sectionTitles: Record<string, string> = {
+  overview: "Overview",
+  orders: "Orders",
+  products: "Products",
+  sourcing: "Sourcing",
+  approvals: "Approvals",
+}
+
+function DashboardShell() {
   const { activeSection } = useDashboard()
-  const {
-    orders,
-    pendingProfiles,
-    products,
-    loading,
-    error,
-    refresh,
-    refreshOrders,
-    refreshPendingProfiles,
-  } = useAdminDashboard(initialData)
-
-  const sectionTitles: Record<string, string> = {
-    overview: "Overview",
-    orders: "Orders",
-    products: "Products",
-    approvals: "Approvals",
-  }
-
-  if (loading) {
-    return (
-      <div className="mx-auto flex min-h-[60vh] max-w-7xl items-center justify-center px-4" aria-live="polite">
-        <Loader2 className="size-6 animate-spin text-accent" aria-hidden="true" />
-      </div>
-    )
-  }
 
   return (
     <div className="min-h-screen">
@@ -49,52 +31,23 @@ function DashboardShell({ initialData }: { initialData?: AdminDashboardData }) {
             <span aria-hidden="true">/</span>
             <span className="font-medium text-foreground">{sectionTitles[activeSection]}</span>
           </div>
-          <button
-            onClick={refresh}
-            className="ml-auto flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-            aria-label="Refresh dashboard data"
-          >
-            <RefreshCw className="size-3.5" aria-hidden="true" />
-            Refresh
-          </button>
         </div>
-        {error && (
-          <div className="border-b border-destructive/30 bg-destructive/5 px-4 py-2 text-xs text-destructive" role="alert" aria-live="polite">
-            {error}
-          </div>
-        )}
         <div className="px-4 py-6 lg:px-8">
-          {activeSection === "overview" && (
-            <Overview
-              orders={orders}
-              products={products}
-              pendingApprovalsCount={pendingProfiles.length}
-              loading={false}
-            />
-          )}
-          {activeSection === "orders" && (
-            <OrdersSection orders={orders} loading={false} onStatusChange={refreshOrders} />
-          )}
-          {activeSection === "products" && (
-            <ProductsSection products={products} loading={false} onRefresh={refresh} />
-          )}
-          {activeSection === "approvals" && (
-            <ApprovalsSection
-              pendingProfiles={pendingProfiles}
-              loading={false}
-              onAction={refreshPendingProfiles}
-            />
-          )}
+          {activeSection === "overview" && <Overview />}
+          {activeSection === "orders" && <OrdersSection />}
+          {activeSection === "products" && <ProductsSection />}
+          {activeSection === "sourcing" && <SourcingSection />}
+          {activeSection === "approvals" && <ApprovalsSection />}
         </div>
       </main>
     </div>
   )
 }
 
-export function DashboardContent({ initialData }: { initialData?: AdminDashboardData }) {
+export function DashboardContent() {
   return (
     <DashboardProvider>
-      <DashboardShell initialData={initialData} />
+      <DashboardShell />
     </DashboardProvider>
   )
 }

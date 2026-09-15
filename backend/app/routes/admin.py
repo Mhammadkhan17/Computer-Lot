@@ -6,11 +6,8 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from supabase import Client
 
-from app.adapters.csv_parser import get_headers, get_template_row, parse_rows
-from app.adapters.product_inserter import insert_products
-from app.adapters.row_normalizer import normalize_row
-from app.adapters.row_validator import validate_row
-from app.database import get_user_supabase
+from app.database import get_supabase
+from app.database_writer import DatabaseWriter, get_db_writer
 from app.rate_limit import limiter
 from app.schemas.admin import AdminActionResponse, ExpireOrdersRequest
 from app.schemas.order import OrderStatusUpdate
@@ -35,11 +32,11 @@ async def approve_profile(
     request: Request,
     profile_id: str,
     user: dict = Depends(get_current_user),
-    supabase: Client = Depends(get_user_supabase),
+    supabase: Client = Depends(get_supabase),
 ):
     _assert_admin(user, supabase)
 
-    _set_profile_role(supabase, profile_id, "wholesale_approved")
+    supabase.table("profiles").update({"role": "wholesale_approved"}).eq("id", profile_id).execute()
 
     await get_manager().broadcast_to_role(
         "profile_update",
@@ -56,11 +53,11 @@ async def reject_profile(
     request: Request,
     profile_id: str,
     user: dict = Depends(get_current_user),
-    supabase: Client = Depends(get_user_supabase),
+    supabase: Client = Depends(get_supabase),
 ):
     _assert_admin(user, supabase)
 
-    _set_profile_role(supabase, profile_id, "retail")
+    supabase.table("profiles").update({"role": "retail"}).eq("id", profile_id).execute()
 
     await get_manager().broadcast_to_role(
         "profile_update",
@@ -71,15 +68,6 @@ async def reject_profile(
     return AdminActionResponse(status="rejected")
 
 
-def _set_profile_role(supabase: Client, profile_id: str, role: str) -> None:
-    resp = supabase.rpc(
-        "admin_set_profile_role",
-        {"p_profile_id": profile_id, "p_role": role},
-    ).execute()
-    if not resp.data or resp.data.get("status") == "not_found":
-        raise HTTPException(status_code=404, detail="Profile not found")
-
-
 @router.patch("/orders/{order_id}/status", response_model=AdminActionResponse)
 @limiter.limit("30/minute")
 async def update_order_status(
@@ -87,7 +75,8 @@ async def update_order_status(
     order_id: str,
     body: OrderStatusUpdate,
     user: dict = Depends(get_current_user),
-    supabase: Client = Depends(get_user_supabase),
+    supabase: Client = Depends(get_supabase),
+    db_writer: DatabaseWriter = Depends(get_db_writer),
 ):
     _assert_admin(user, supabase)
 
@@ -99,55 +88,18 @@ async def update_order_status(
         )
 
     if body.status == "cancelled":
-        # Cancel goes through the SECURITY DEFINER RPC (migration 004/007):
-        # it is idempotent and only restocks orders that are still
-        # pending_whatsapp, so a double cancel or a cancel racing with
-        # expire_pending_orders can never restock the same inventory twice.
-        cancel_resp = supabase.rpc("admin_cancel_order", {"p_order_id": order_id}).execute()
-        if not cancel_resp.data:
-            raise HTTPException(status_code=500, detail="Order cancel failed")
-        data = cancel_resp.data
-        rpc_status = data.get("status")
-        if rpc_status == "not_found":
-            raise HTTPException(status_code=404, detail="Order not found")
-        if rpc_status == "already_cancelled_or_missing":
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Order is not pending_whatsapp; it may already be cancelled",
-            )
-        if rpc_status != "cancelled":
-            raise HTTPException(status_code=500, detail="Order cancel failed")
-        readable_order_id = data.get("readable_order_id")
-        order_user_id = data.get("user_id")
-    else:
-        order_resp = supabase.table("orders").select("user_id, readable_order_id, status").eq("id", order_id).execute()
-        order_rows = order_resp.data
-        if not order_rows:
-            raise HTTPException(status_code=404, detail="Order not found")
+        order_resp = supabase.table("order_items").select(
+            "product_id, quantity_ordered"
+        ).eq("order_id", order_id).execute()
+        items = order_resp.data or []
+        if not items:
+            raise HTTPException(status_code=404, detail="Order not found or has no items")
+        for item in items:
+            db_writer.restock_product(item["product_id"], item["quantity_ordered"])
 
-        row = order_rows[0]
-        order_user_id = row["user_id"]
-        readable_order_id = row["readable_order_id"]
-        current_status = row.get("status")
-
-        # State-machine guard (mirrors the migration-007 DB trigger): a
-        # cancelled order is terminal, and a completed order cannot be
-        # reopened. Without this, an admin could re-open an order whose
-        # stock was already restored on cancel, minting inventory.
-        if current_status == "cancelled":
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Cannot change the status of a cancelled order (terminal state)",
-            )
-        if current_status == "completed" and body.status in {"pending_whatsapp", "processing"}:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Cannot reopen a completed order",
-            )
-
-        update_resp = supabase.table("orders").update({"status": body.status}).eq("id", order_id).execute()
-        if not update_resp.data:
-            raise HTTPException(status_code=500, detail="Order update failed")
+    success, order_user_id, readable_order_id = db_writer.update_order_status(order_id, body.status)
+    if not success:
+        raise HTTPException(status_code=404, detail="Order not found")
 
     mgr = get_manager()
     await mgr.broadcast_to_role(
@@ -173,17 +125,43 @@ async def update_order_status(
     return AdminActionResponse(status="updated")
 
 
+VALID_GRADES = {"Grade_A", "Grade_B", "Grade_C", "For_Parts"}
+
+CSV_HEADERS = [
+    "title", "sku", "description", "grade", "items_per_lot",
+    "retail_price_per_lot", "wholesale_price_per_lot", "minimum_wholesale_lots",
+    "available_stock_lots", "image_urls", "tags", "hardware_specifications",
+]
+
+TEMPLATE_ROW = {
+    "title": "Example Product",
+    "sku": "EX-001",
+    "description": "A sample product description",
+    "grade": "Grade_A",
+    "items_per_lot": "1",
+    "retail_price_per_lot": "199.99",
+    "wholesale_price_per_lot": "149.99",
+    "minimum_wholesale_lots": "5",
+    "available_stock_lots": "20",
+    "image_urls": "https://example.com/img1.jpg, https://example.com/img2.jpg",
+    "tags": "example, sample, demo",
+    "hardware_specifications": '{"key": "value"}',
+}
+
+
 @router.get("/products/template")
+@limiter.limit("30/minute")
 async def download_template(
+    request: Request,
     user: dict = Depends(get_current_user),
-    supabase: Client = Depends(get_user_supabase),
+    supabase: Client = Depends(get_supabase),
 ):
     _assert_admin(user, supabase)
 
     output = io.StringIO()
-    writer = csv.DictWriter(output, fieldnames=get_headers())
+    writer = csv.DictWriter(output, fieldnames=CSV_HEADERS)
     writer.writeheader()
-    writer.writerow(get_template_row())
+    writer.writerow(TEMPLATE_ROW)
     output.seek(0)
 
     return StreamingResponse(
@@ -199,42 +177,47 @@ async def import_products(
     request: Request,
     file: UploadFile = File(...),
     user: dict = Depends(get_current_user),
-    supabase: Client = Depends(get_user_supabase),
+    supabase: Client = Depends(get_supabase),
 ):
     _assert_admin(user, supabase)
 
     content = await file.read()
-    if len(content) > 5 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="File too large (max 5 MB)")
     if not content or not content.strip():
         raise HTTPException(status_code=400, detail="File is empty")
 
-    all_rows = parse_rows(content)
+    text = content.decode("utf-8-sig")
+    reader = csv.DictReader(io.StringIO(text))
+
+    all_rows: list[dict] = list(reader)
     total_rows = len(all_rows)
 
     errors: list[RowImportError] = []
-    valid_rows: list[dict] = []
+    rows: list[dict] = []
 
     for row_idx, row in enumerate(all_rows, start=2):
-        validated, row_errors = validate_row(row)
+        row_errors = _validate_row(row)
         if row_errors:
             sku = row.get("sku", "").strip() or ""
             errors.append(RowImportError(row=row_idx, sku=sku, reason="; ".join(row_errors)))
             continue
 
-        normalized = normalize_row(validated)
-        valid_rows.append(normalized)
+        rows.append(_normalize_row(row))
 
     if errors:
         return ProductImportResponse(inserted=0, errors=errors, total_rows=total_rows)
 
-    inserted = insert_products(supabase, valid_rows)
-    insertion_errors = total_rows - inserted
-    if insertion_errors > 0:
-        errors.append(RowImportError(row=0, sku="", reason=f"{insertion_errors} rows failed to insert"))
+    for row in rows:
+        try:
+            supabase.table("products").insert(row).execute()
+        except Exception as e:
+            sku = row.get("sku", "") or ""
+            errors.append(RowImportError(row=0, sku=sku, reason=str(e)))
+
+    if errors:
+        return ProductImportResponse(inserted=len(rows) - len(errors), errors=errors, total_rows=total_rows)
 
     await get_manager().broadcast_to_role("product_update", {}, role="admin")
-    return ProductImportResponse(inserted=inserted, errors=errors, total_rows=total_rows)
+    return ProductImportResponse(inserted=len(rows), errors=[], total_rows=total_rows)
 
 
 @router.post("/products/broadcast-update")
@@ -242,7 +225,7 @@ async def import_products(
 async def broadcast_product_update(
     request: Request,
     user: dict = Depends(get_current_user),
-    supabase: Client = Depends(get_user_supabase),
+    supabase: Client = Depends(get_supabase),
 ):
     _assert_admin(user, supabase)
     await get_manager().broadcast_to_role("product_update", {}, role="admin")
@@ -255,7 +238,7 @@ async def expire_orders(
     request: Request,
     body: ExpireOrdersRequest | None = None,
     user: dict = Depends(get_current_user),
-    supabase: Client = Depends(get_user_supabase),
+    supabase: Client = Depends(get_supabase),
 ):
     _assert_admin(user, supabase)
     older_than_hours = (body.older_than_hours if body else None) or 24
@@ -263,3 +246,69 @@ async def expire_orders(
     if not resp.data:
         raise HTTPException(status_code=500, detail="Order expiry failed")
     return resp.data
+
+
+def _validate_row(row: dict) -> list[str]:
+    errs: list[str] = []
+
+    if not row.get("title", "").strip():
+        errs.append("Missing title")
+
+    if not row.get("sku", "").strip():
+        errs.append("Missing SKU")
+
+    grade = row.get("grade", "").strip()
+    if grade and grade not in VALID_GRADES:
+        errs.append(f"Invalid grade '{grade}'")
+
+    try:
+        retail = float(row.get("retail_price_per_lot", ""))
+        if retail <= 0:
+            errs.append("Retail price must be > 0")
+    except (ValueError, TypeError):
+        errs.append("Missing or invalid retail price")
+
+    try:
+        wholesale = float(row.get("wholesale_price_per_lot", ""))
+        if wholesale <= 0:
+            errs.append("Wholesale price must be > 0")
+    except (ValueError, TypeError):
+        errs.append("Missing or invalid wholesale price")
+
+    try:
+        stock = int(row.get("available_stock_lots", "0"))
+        if stock < 0:
+            errs.append("Stock must be >= 0")
+    except (ValueError, TypeError):
+        errs.append("Missing or invalid stock count")
+
+    return errs
+
+
+def _normalize_row(row: dict) -> dict:
+    images = [s.strip() for s in row.get("image_urls", "").split(",") if s.strip()] if row.get("image_urls", "").strip() else None
+    tags = [s.strip() for s in row.get("tags", "").split(",") if s.strip()] if row.get("tags", "").strip() else None
+
+    specs = {}
+    raw_specs = row.get("hardware_specifications", "").strip()
+    if raw_specs:
+        try:
+            import json
+            specs = json.loads(raw_specs)
+        except json.JSONDecodeError:
+            pass
+
+    return {
+        "title": row["title"].strip(),
+        "sku": row["sku"].strip(),
+        "description": row.get("description", "").strip() or None,
+        "grade": row.get("grade", "").strip() or "Grade_A",
+        "items_per_lot": int(row.get("items_per_lot", "1").strip() or "1"),
+        "retail_price_per_lot": float(row["retail_price_per_lot"]),
+        "wholesale_price_per_lot": float(row["wholesale_price_per_lot"]),
+        "minimum_wholesale_lots": int(row.get("minimum_wholesale_lots", "5").strip() or "5"),
+        "available_stock_lots": int(row["available_stock_lots"]),
+        "images": images,
+        "tags": tags,
+        "hardware_specifications": specs,
+    }

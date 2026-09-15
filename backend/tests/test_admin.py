@@ -14,14 +14,12 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.config import settings
-from app.database import get_service_role_supabase, get_supabase, get_user_supabase
+from app.database import get_supabase
+from app.database_writer import get_db_writer, InMemoryDatabaseWriter
 from app.utils.ws_manager import get_manager
 
 
 def _make_token(payload_override: dict | None = None) -> str:
-    # The JWT role claim must be "authenticated" (L-R3-1 fail-closed local
-    # verification). Admin authority comes from the profiles table row that
-    # the route fetches via get_user_supabase, not from the JWT role claim.
     payload = {
         "sub": "admin-user",
         "role": "authenticated",
@@ -52,24 +50,7 @@ def override_deps():
     global mock_supabase, products_table_mock
     mock_supabase = MagicMock()
     products_table_mock = MagicMock()
-
-    def rpc_side(function_name, params):
-        r = MagicMock()
-        if function_name in ("admin_set_profile_role", "admin_cancel_order"):
-            if function_name == "admin_cancel_order":
-                r.execute.return_value.data = {
-                    "status": "cancelled",
-                    "order_id": "order-789",
-                    "readable_order_id": 42,
-                    "user_id": "retail-user",
-                }
-            else:
-                r.execute.return_value.data = {"status": "updated"}
-        elif function_name == "expire_pending_orders":
-            r.execute.return_value.data = {"expired": 3}
-        return r
-
-    mock_supabase.rpc.side_effect = rpc_side
+    in_memory_writer = InMemoryDatabaseWriter()
 
     def mock_table(name):
         t = MagicMock()
@@ -97,8 +78,7 @@ def override_deps():
     mock_supabase.table.side_effect = mock_table
 
     app.dependency_overrides[get_supabase] = lambda: mock_supabase
-    app.dependency_overrides[get_user_supabase] = lambda: mock_supabase
-    app.dependency_overrides[get_service_role_supabase] = lambda: mock_supabase
+    app.dependency_overrides[get_db_writer] = lambda: in_memory_writer
     yield
     app.dependency_overrides.clear()
 
@@ -139,75 +119,37 @@ class TestAdminReject:
 
 class TestAdminOrderStatus:
     def test_update_order_status(self):
-        mock_order_result = [{"user_id": "retail-user", "readable_order_id": 42}]
-        mock_update_result = [{"id": "order-789", "user_id": "retail-user", "readable_order_id": 42}]
-        mock_supabase = MagicMock()
+        in_memory = InMemoryDatabaseWriter()
+        in_memory.orders["order-789"] = {"user_id": "retail-user", "customer_name": "Test"}
+        app.dependency_overrides[get_db_writer] = lambda: in_memory
 
-        def table_side_effect(name):
-            if name == "profiles":
-                t = MagicMock()
-                t.select.return_value.eq.return_value.single.return_value.execute.return_value.data = {
-                    "role": "admin"
-                }
-                return t
-            elif name == "orders":
-                t = MagicMock()
-                t.select.return_value.eq.return_value.execute.return_value.data = mock_order_result
-                t.update.return_value.eq.return_value.execute.return_value.data = mock_update_result
-                return t
-            return MagicMock()
+        resp = TestClient(app).patch(
+            "/admin/orders/order-789/status",
+            json={"status": "completed"},
+            headers=AUTH_HEADER,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "updated"
+        app.dependency_overrides[get_db_writer] = lambda: InMemoryDatabaseWriter()
 
-        mock_supabase.table.side_effect = table_side_effect
-        app.dependency_overrides[get_user_supabase] = lambda: mock_supabase
-        try:
-            resp = TestClient(app).patch(
-                "/admin/orders/order-789/status",
-                json={"status": "completed"},
-                headers=AUTH_HEADER,
-            )
-            assert resp.status_code == 200
-            data = resp.json()
-            assert data["status"] == "updated"
-        finally:
-            app.dependency_overrides.clear()
+    def test_cancel_order_restocks_items(self):
+        in_memory = InMemoryDatabaseWriter()
+        in_memory.orders["order-789"] = {"user_id": "retail-user", "customer_name": "Test"}
+        in_memory.stock = {"prod-1": 10, "prod-2": 5}
+        app.dependency_overrides[get_db_writer] = lambda: in_memory
 
-    def test_cancel_order_restocks_items_via_rpc(self):
-        mock_supabase = MagicMock()
-
-        def table_side_effect(name):
-            if name == "profiles":
-                t = MagicMock()
-                t.select.return_value.eq.return_value.single.return_value.execute.return_value.data = {
-                    "role": "admin"
-                }
-                return t
-            return MagicMock()
-
-        mock_supabase.table.side_effect = table_side_effect
-
-        cancel_rpc = MagicMock()
-        cancel_rpc.execute.return_value.data = {
-            "status": "cancelled",
-            "order_id": "order-789",
-            "readable_order_id": 42,
-            "user_id": "retail-user",
-        }
-        mock_supabase.rpc.return_value = cancel_rpc
-
-        app.dependency_overrides[get_user_supabase] = lambda: mock_supabase
-        try:
-            resp = TestClient(app).patch(
-                "/admin/orders/order-789/status",
-                json={"status": "cancelled"},
-                headers=AUTH_HEADER,
-            )
-            assert resp.status_code == 200
-            assert resp.json()["status"] == "updated"
-            mock_supabase.rpc.assert_called_once_with(
-                "admin_cancel_order", {"p_order_id": "order-789"}
-            )
-        finally:
-            app.dependency_overrides.clear()
+        resp = TestClient(app).patch(
+            "/admin/orders/order-789/status",
+            json={"status": "cancelled"},
+            headers=AUTH_HEADER,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "updated"
+        assert in_memory.stock["prod-1"] == 13
+        assert in_memory.stock["prod-2"] == 7
+        assert in_memory.order_statuses["order-789"] == "cancelled"
+        app.dependency_overrides[get_db_writer] = lambda: InMemoryDatabaseWriter()
 
     def test_update_status_rejects_non_admin(self):
         token = _make_token({"sub": "retail-user"})
@@ -225,159 +167,6 @@ class TestAdminOrderStatus:
             headers=AUTH_HEADER,
         )
         assert resp.status_code == 422
-
-
-class TestAdminOrderStatusStateMachine:
-    """H-R3-1: the status route must enforce the order state machine so a
-    cancelled order stays terminal and a completed order cannot be reopened
-    (which would re-open an order whose stock was already restored)."""
-
-    def _patch(self, order_status: str, new_status: str, token=None):
-        mock_supabase = MagicMock()
-        mock_supabase.rpc.return_value.execute.return_value.data = {
-            "status": "cancelled",
-            "readable_order_id": 42,
-            "user_id": "retail-user",
-        }
-
-        def table_side_effect(name):
-            if name == "profiles":
-                t = MagicMock()
-                t.select.return_value.eq.return_value.single.return_value.execute.return_value.data = {
-                    "role": "admin"
-                }
-                return t
-            if name == "orders":
-                t = MagicMock()
-                t.select.return_value.eq.return_value.execute.return_value.data = [
-                    {"user_id": "retail-user", "readable_order_id": 42, "status": order_status}
-                ]
-                t.update.return_value.eq.return_value.execute.return_value.data = [
-                    {"id": "order-789", "status": new_status}
-                ]
-                return t
-            return MagicMock()
-
-        mock_supabase.table.side_effect = table_side_effect
-        app.dependency_overrides[get_user_supabase] = lambda: mock_supabase
-        try:
-            return TestClient(app).patch(
-                "/admin/orders/order-789/status",
-                json={"status": new_status},
-                headers=AUTH_HEADER,
-            )
-        finally:
-            app.dependency_overrides.clear()
-
-    def test_cancelled_order_is_terminal(self):
-        resp = self._patch("cancelled", "processing")
-        assert resp.status_code == 409
-        assert "terminal" in resp.json()["detail"]
-
-    def test_completed_order_cannot_reopen(self):
-        for target in ("pending_whatsapp", "processing"):
-            resp = self._patch("completed", target)
-            assert resp.status_code == 409
-            assert "reopen" in resp.json()["detail"]
-
-    def test_completed_to_cancelled_allowed(self):
-        resp = self._patch("completed", "cancelled")
-        assert resp.status_code == 200
-
-    def test_pending_to_processing_allowed(self):
-        resp = self._patch("pending_whatsapp", "processing")
-        assert resp.status_code == 200
-
-    def test_cancel_rpc_reports_already_cancelled_or_missing(self):
-        mock_supabase = MagicMock()
-        mock_supabase.rpc.return_value.execute.return_value.data = {
-            "status": "already_cancelled_or_missing",
-            "order_id": "order-789",
-        }
-        mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = {
-            "role": "admin"
-        }
-        app.dependency_overrides[get_user_supabase] = lambda: mock_supabase
-        try:
-            resp = TestClient(app).patch(
-                "/admin/orders/order-789/status",
-                json={"status": "cancelled"},
-                headers=AUTH_HEADER,
-            )
-        finally:
-            app.dependency_overrides.clear()
-        assert resp.status_code == 409
-        assert "already" in resp.json()["detail"].lower()
-
-    def test_cancel_rpc_reports_not_found(self):
-        mock_supabase = MagicMock()
-        mock_supabase.rpc.return_value.execute.return_value.data = {"status": "not_found"}
-        mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = {
-            "role": "admin"
-        }
-        app.dependency_overrides[get_user_supabase] = lambda: mock_supabase
-        try:
-            resp = TestClient(app).patch(
-                "/admin/orders/order-789/status",
-                json={"status": "cancelled"},
-                headers=AUTH_HEADER,
-            )
-        finally:
-            app.dependency_overrides.clear()
-        assert resp.status_code == 404
-
-    def test_non_admin_cannot_reach_cancel_rpc(self):
-        """M-R3-1: a non-admin is denied at the route before any RPC call."""
-        mock_supabase = MagicMock()
-        rpc_mock = MagicMock()
-        mock_supabase.rpc = rpc_mock
-        app.dependency_overrides[get_user_supabase] = lambda: mock_supabase
-        token = _make_token({"sub": "retail-user"})
-        try:
-            resp = TestClient(app).patch(
-                "/admin/orders/order-789/status",
-                json={"status": "cancelled"},
-                headers={"Authorization": f"Bearer {token}"},
-            )
-        finally:
-            app.dependency_overrides.clear()
-        assert resp.status_code == 403
-        rpc_mock.assert_not_called()
-
-    def test_non_admin_cannot_reach_expire_rpc(self):
-        """M-R3-1: expire_pending_orders is admin-only at the route."""
-        mock_supabase = MagicMock()
-        rpc_mock = MagicMock()
-        mock_supabase.rpc = rpc_mock
-        app.dependency_overrides[get_user_supabase] = lambda: mock_supabase
-        token = _make_token({"sub": "retail-user"})
-        try:
-            resp = TestClient(app).post(
-                "/admin/expire-orders",
-                json={"older_than_hours": 24},
-                headers={"Authorization": f"Bearer {token}"},
-            )
-        finally:
-            app.dependency_overrides.clear()
-        assert resp.status_code == 403
-        rpc_mock.assert_not_called()
-
-    def test_non_admin_cannot_reach_role_rpc(self):
-        """M-R3-1: admin_set_profile_role is admin-only at the route."""
-        mock_supabase = MagicMock()
-        rpc_mock = MagicMock()
-        mock_supabase.rpc = rpc_mock
-        app.dependency_overrides[get_user_supabase] = lambda: mock_supabase
-        token = _make_token({"sub": "retail-user"})
-        try:
-            resp = TestClient(app).post(
-                "/admin/profiles/user-456/approve",
-                headers={"Authorization": f"Bearer {token}"},
-            )
-        finally:
-            app.dependency_overrides.clear()
-        assert resp.status_code == 403
-        rpc_mock.assert_not_called()
 
 
 class TestAdminExpireOrders:

@@ -13,6 +13,7 @@ from app.rate_limit import limiter
 from app.routes.admin import router as admin_router
 from app.routes.wholesale import router as wholesale_router
 from app.routes.checkout import router as checkout_router
+from app.routes.explore import router as explore_router
 from app.routes.ws import router as ws_router
 
 logging.basicConfig(level=logging.INFO)
@@ -44,6 +45,7 @@ app.add_middleware(SlowAPIMiddleware)
 app.include_router(admin_router)
 app.include_router(wholesale_router)
 app.include_router(checkout_router)
+app.include_router(explore_router)
 app.include_router(ws_router)
 
 

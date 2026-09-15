@@ -1,5 +1,5 @@
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 os.environ.setdefault("SUPABASE_URL", "https://test.supabase.co")
 os.environ.setdefault("SUPABASE_ANON_KEY", "test-anon-key")
@@ -10,16 +10,18 @@ os.environ.setdefault("DEBUG", "false")
 
 import jwt
 import pytest
-from fastapi import Depends
 from fastapi.testclient import TestClient
 
 from app.main import app
 from app.config import settings
-from app.database import get_service_role_supabase, get_supabase, get_user_supabase
-from app.schemas.order import OrderItemResponse, StockErrorItem
+from app.database import get_supabase
+from app.database_writer import get_db_writer, InMemoryDatabaseWriter
+from app.notification import get_notifier, SpyBroadcaster
+from app.routes.checkout import _build_whatsapp_link
+from app.schemas.order import OrderItemResponse
 
 
-def _make_token(payload_override=None):
+def _make_token(payload_override: dict | None = None) -> str:
     payload = {
         "sub": "user-123",
         "role": "authenticated",
@@ -31,11 +33,9 @@ def _make_token(payload_override=None):
     return jwt.encode(payload, settings.supabase_jwt_secret, algorithm="HS256")
 
 
-def _make_profile(role="retail", name="Test User", phone="+1234567890"):
-    return {"full_name": name, "phone": phone, "role": role}
-
-
-def _make_product(pid, retail=100.0, wholesale=80.0, stock=10, min_wholesale=5):
+def _make_product(
+    pid: str, retail: float = 100.0, wholesale: float = 80.0, stock: int = 10, min_wholesale: int = 5
+):
     return {
         "id": pid,
         "title": f"Product {pid}",
@@ -46,27 +46,47 @@ def _make_product(pid, retail=100.0, wholesale=80.0, stock=10, min_wholesale=5):
     }
 
 
-def _mock_supabase_client():
-    mock_supabase = MagicMock()
+def _make_profile(role: str = "retail", name: str = "Test User", phone: str = "+1234567890"):
+    return {"full_name": name, "phone": phone, "role": role}
 
-    def mock_table(name):
+
+def _make_supabase(role="retail", product=None, products=None):
+    if product is None and products is None:
+        product = _make_product("default")
+    mock = MagicMock()
+
+    def table_side(name):
         t = MagicMock()
         if name == "profiles":
-            t.select.return_value.eq.return_value.single.return_value.execute.return_value.data = _make_profile()
+            t.select.return_value.eq.return_value.single.return_value.execute.return_value.data = _make_profile(role)
         elif name == "products":
-            t.select.return_value.in_.return_value.execute.return_value.data = [_make_product("00000000-0000-0000-0000-000000000001")]
+            data = products if products is not None else ([product] if product else [])
+            t.select.return_value.in_.return_value.execute.return_value.data = data
         return t
-
-    mock_supabase.table.side_effect = mock_table
-    return mock_supabase
+    mock.table.side_effect = table_side
+    return mock
 
 
 @pytest.fixture(autouse=True)
 def override_deps():
-    mock_supabase = _mock_supabase_client()
+    mock_supabase = MagicMock()
+    mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = _make_profile()
+
+    def mock_table(name):
+        t = MagicMock()
+        if name == "profiles":
+            t.select.return_value.eq.return_value.single.return_value.execute.return_value.data = _make_profile("retail")
+        elif name == "products":
+            t.select.return_value.in_.return_value.execute.return_value.data = [_make_product("default")]
+        return t
+    mock_supabase.table.side_effect = mock_table
+
+    in_memory_writer = InMemoryDatabaseWriter()
+    spy_notifier = SpyBroadcaster()
+
     app.dependency_overrides[get_supabase] = lambda: mock_supabase
-    app.dependency_overrides[get_user_supabase] = lambda: mock_supabase
-    app.dependency_overrides[get_service_role_supabase] = lambda: mock_supabase
+    app.dependency_overrides[get_db_writer] = lambda: in_memory_writer
+    app.dependency_overrides[get_notifier] = lambda: spy_notifier
     yield
     app.dependency_overrides.clear()
 
@@ -85,197 +105,216 @@ class TestCheckoutAuth:
         assert resp.status_code == 401
 
 
-class TestCheckoutInputValidation:
-    def _post(self, payload):
-        return TestClient(app).post(
+class TestCheckoutPricing:
+    def test_retail_pricing_default(self):
+        client = TestClient(app)
+        token = _make_token()
+        resp = client.post(
             "/checkout",
-            json=payload,
-            headers={"Authorization": f"Bearer {_make_token()}"},
+            json={"items": [{"product_id": "default", "quantity": 2}]},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_amount"] == 200.0
+        assert data["items"][0]["unit_price_applied"] == 100.0
+
+    def test_wholesale_pricing(self):
+        app.dependency_overrides[get_supabase] = lambda: _make_supabase(
+            "wholesale_approved", _make_product("p1", retail=100.0, wholesale=80.0, min_wholesale=3)
         )
 
-    def test_empty_items_rejected(self):
-        assert self._post({"items": []}).status_code == 422
+        client = TestClient(app)
+        token = _make_token({"role": "wholesale_approved"})
+        resp = client.post(
+            "/checkout",
+            json={"items": [{"product_id": "p1", "quantity": 10}]},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["items"][0]["unit_price_applied"] == 80.0
+        app.dependency_overrides.clear()
 
-    def test_too_many_items_rejected(self):
-        items = [{"product_id": "00000000-0000-0000-0000-000000000000", "quantity": 1}] * 51
-        assert self._post({"items": items}).status_code == 422
+    def test_wholesale_below_threshold(self):
+        app.dependency_overrides[get_supabase] = lambda: _make_supabase(
+            "wholesale_approved", _make_product("p1")
+        )
 
-    def test_zero_quantity_rejected(self):
-        items = [{"product_id": "00000000-0000-0000-0000-000000000000", "quantity": 0}]
-        assert self._post({"items": items}).status_code == 422
-
-    def test_quantity_above_max_rejected(self):
-        items = [{"product_id": "00000000-0000-0000-0000-000000000000", "quantity": 1001}]
-        assert self._post({"items": items}).status_code == 422
-
-    def test_non_uuid_product_id_rejected(self):
-        items = [{"product_id": "not-a-uuid", "quantity": 1}]
-        resp = self._post({"items": items})
-        assert resp.status_code == 422
-        assert "product_id" in resp.text
+        client = TestClient(app)
+        token = _make_token({"role": "wholesale_approved"})
+        resp = client.post(
+            "/checkout",
+            json={"items": [{"product_id": "p1", "quantity": 3}]},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["items"][0]["unit_price_applied"] == 100.0
+        app.dependency_overrides.clear()
 
 
-class TestCheckoutRouteIntegration:
-    @patch("app.adapters.order_intake.resolve_all_items")
-    @patch("app.adapters.order_intake.check_availability")
-    @patch("app.adapters.order_intake.run_in_transaction")
-    @patch("app.adapters.order_intake.build_order_link")
-    @patch("app.adapters.order_intake.broadcast_order_update")
-    def test_successful_checkout(
-        self, mock_broadcast, mock_link, mock_txn, mock_stock, mock_resolve
-    ):
-        mock_resolve.return_value = [
-            OrderItemResponse(
-                product_id="00000000-0000-0000-0000-000000000001",
-                title="Product default",
-                quantity_ordered=2,
-                unit_price_applied=100.0,
-            )
-        ]
-        mock_stock.return_value = []
-        mock_txn.return_value = {
-            "order_id": "order-uuid",
-            "readable_order_id": 1001,
-            "commit": True,
-        }
-        mock_link.return_value = "https://wa.me/1234567890?text=Test"
+class TestCheckoutStock:
+    def test_insufficient_stock(self):
+        app.dependency_overrides[get_supabase] = lambda: _make_supabase(
+            "retail", _make_product("p1", stock=2)
+        )
 
         client = TestClient(app)
         token = _make_token()
         resp = client.post(
             "/checkout",
-            json={"items": [{"product_id": "00000000-0000-0000-0000-000000000001", "quantity": 2}]},
+            json={"items": [{"product_id": "p1", "quantity": 5}]},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["error"] == "insufficient_stock"
+        assert data["out_of_stock"][0]["available"] == 2
+        assert data["out_of_stock"][0]["requested"] == 5
+        app.dependency_overrides.clear()
+
+
+class TestCheckoutWhatsApp:
+    def test_whatsapp_link_in_response(self):
+        client = TestClient(app)
+        token = _make_token()
+        resp = client.post(
+            "/checkout",
+            json={"items": [{"product_id": "default", "quantity": 1}]},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "wa.me" in data["whatsapp_deep_link"]
+        assert "1000" in data["whatsapp_deep_link"]
+
+
+class TestCheckoutEdgeCases:
+    def test_multiple_items_mixed_pricing(self):
+        p1 = _make_product("p1", retail=100.0, wholesale=80.0, min_wholesale=3)
+        p2 = _make_product("p2", retail=50.0, wholesale=30.0, min_wholesale=10)
+        app.dependency_overrides[get_supabase] = lambda: _make_supabase(
+            "wholesale_approved", products=[p1, p2]
+        )
+
+        token = _make_token({"role": "wholesale_approved"})
+        resp = TestClient(app).post(
+            "/checkout",
+            json={"items": [{"product_id": "p1", "quantity": 8}, {"product_id": "p2", "quantity": 2}]},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert resp.status_code == 200
+        items = resp.json()["items"]
+        p1_item = next(i for i in items if i["product_id"] == "p1")
+        p2_item = next(i for i in items if i["product_id"] == "p2")
+        assert p1_item["unit_price_applied"] == 80.0
+        assert p2_item["unit_price_applied"] == 50.0
+        assert resp.json()["total_amount"] == 740.0
+        app.dependency_overrides.clear()
+
+    def test_unknown_product_id(self):
+        app.dependency_overrides[get_supabase] = lambda: _make_supabase("retail", product=None, products=[])
+
+        token = _make_token()
+        resp = TestClient(app).post(
+            "/checkout",
+            json={"items": [{"product_id": "nonexistent", "quantity": 1}]},
             headers={"Authorization": f"Bearer {token}"},
         )
 
         assert resp.status_code == 200
         data = resp.json()
-        assert data["readable_order_id"] == 1001
-        assert data["total_amount"] == 200.0
-        assert "wa.me" in data["whatsapp_deep_link"]
+        assert data["error"] == "insufficient_stock"
+        assert data["out_of_stock"][0]["title"] == "Unknown Product"
+        assert data["out_of_stock"][0]["available"] == 0
+        app.dependency_overrides.clear()
 
-    def test_checkout_returns_stock_errors(self):
-        from app.adapters import stock as stock_adapter
-        from app.adapters import pricing as pricing_adapter
+    def test_partial_stock_failure(self):
+        p1 = _make_product("p1", stock=10)
+        p2 = _make_product("p2", stock=2)
+        app.dependency_overrides[get_supabase] = lambda: _make_supabase("retail", products=[p1, p2])
 
-        with patch.object(stock_adapter, "check_availability", return_value=[StockErrorItem(product_id="00000000-0000-0000-0000-000000000002", title="Product p1", available=2, requested=5)]):
-            with patch.object(pricing_adapter, "resolve_all_items", return_value=[]):
-                client = TestClient(app)
-                token = _make_token()
-                resp = client.post(
-                    "/checkout",
-                    json={"items": [{"product_id": "00000000-0000-0000-0000-000000000002", "quantity": 5}]},
-                    headers={"Authorization": f"Bearer {token}"},
-                )
+        token = _make_token()
+        resp = TestClient(app).post(
+            "/checkout",
+            json={"items": [{"product_id": "p1", "quantity": 3}, {"product_id": "p2", "quantity": 5}]},
+            headers={"Authorization": f"Bearer {token}"},
+        )
 
-        assert resp.status_code == 400
+        assert resp.status_code == 200
         data = resp.json()
         assert data["error"] == "insufficient_stock"
         assert len(data["out_of_stock"]) == 1
+        assert data["out_of_stock"][0]["product_id"] == "p2"
+        app.dependency_overrides.clear()
 
-    @patch("app.adapters.order_intake.resolve_all_items")
-    @patch("app.adapters.order_intake.check_availability")
-    @patch("app.adapters.order_intake.run_in_transaction")
-    def test_checkout_maps_rpc_insufficient_stock_to_400(self, mock_txn, mock_stock, mock_resolve):
-        from app.adapters.stock import InsufficientStockError
-
-        mock_stock.return_value = []
-        mock_resolve.return_value = []
-        mock_txn.side_effect = InsufficientStockError(
-            [StockErrorItem(product_id="00000000-0000-0000-0000-000000000002", title="Product p1", available=2, requested=5)]
-        )
-
-        client = TestClient(app)
+    def test_empty_cart(self):
         token = _make_token()
-        resp = client.post(
+        resp = TestClient(app).post(
             "/checkout",
-            json={"items": [{"product_id": "00000000-0000-0000-0000-000000000002", "quantity": 5}]},
+            json={"items": []},
             headers={"Authorization": f"Bearer {token}"},
         )
-
-        assert resp.status_code == 400
+        assert resp.status_code == 200
         data = resp.json()
-        assert data["error"] == "insufficient_stock"
-        assert data["out_of_stock"][0]["product_id"] == "00000000-0000-0000-0000-000000000002"
-
-    @patch("app.routes.checkout.create_order")
-    def test_unexpected_error_returns_generic_500(self, mock_create):
-        mock_create.side_effect = RuntimeError("secret internal detail: db password exposed")
-
-        client = TestClient(app)
-        token = _make_token()
-        resp = client.post(
-            "/checkout",
-            json={"items": [{"product_id": "00000000-0000-0000-0000-000000000001", "quantity": 1}]},
-            headers={"Authorization": f"Bearer {token}"},
-        )
-
-        assert resp.status_code == 500
-        data = resp.json()
-        assert data["error"] == "internal_error"
-        assert "secret" not in resp.text
-        assert "password" not in resp.text
+        assert data["total_amount"] == 0
 
     def test_profile_not_found_returns_404(self):
         mock_supabase = MagicMock()
         mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = None
-        app.dependency_overrides[get_user_supabase] = lambda: mock_supabase
+        app.dependency_overrides[get_supabase] = lambda: mock_supabase
 
-        client = TestClient(app)
         token = _make_token()
-        resp = client.post(
+        resp = TestClient(app).post(
             "/checkout",
-            json={"items": [{"product_id": "00000000-0000-0000-0000-000000000002", "quantity": 1}]},
+            json={"items": [{"product_id": "p1", "quantity": 1}]},
             headers={"Authorization": f"Bearer {token}"},
         )
         assert resp.status_code == 404
         app.dependency_overrides.clear()
 
+    def test_db_transaction_failure_returns_500(self):
+        failing_writer = InMemoryDatabaseWriter()
+        failing_writer.fail_decrement = True
+        app.dependency_overrides[get_db_writer] = lambda: failing_writer
 
-class TestCheckoutOpenOrderCap:
-    def test_cap_raises_when_at_limit(self):
-        from fastapi import HTTPException
+        token = _make_token()
+        resp = TestClient(app).post(
+            "/checkout",
+            json={"items": [{"product_id": "default", "quantity": 1}]},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["error"] == "stock_changed_retry"
+        app.dependency_overrides.clear()
 
-        from app.adapters.order_intake import _assert_open_order_cap
 
-        mock_supabase = MagicMock()
-        mock_supabase.table.return_value.select.return_value.eq.return_value.eq.return_value.execute.return_value.data = [
-            {"id": "x"}
-        ] * 20
+class TestWhatsAppLinkUnit:
+    def test_whatsapp_link_contains_order_id(self):
+        items = [OrderItemResponse(product_id="p1", title="Test Product", quantity_ordered=2, unit_price_applied=50.0)]
+        link = _build_whatsapp_link(42, "Alice", 100.0, items)
+        assert "42" in link
+        assert "wa.me" in link
 
-        with pytest.raises(HTTPException) as exc:
-            _assert_open_order_cap(mock_supabase, "user-123")
-        assert exc.value.status_code == 400
-        assert "20" in exc.value.detail
+    def test_whatsapp_link_contains_customer_name(self):
+        items = [OrderItemResponse(product_id="p1", title="Test Product", quantity_ordered=2, unit_price_applied=50.0)]
+        link = _build_whatsapp_link(42, "Alice", 100.0, items)
+        assert "Alice" in link
 
-    def test_cap_passes_below_limit(self):
-        from app.adapters.order_intake import _assert_open_order_cap
+    def test_whatsapp_link_contains_total(self):
+        items = [OrderItemResponse(product_id="p1", title="Test Product", quantity_ordered=2, unit_price_applied=50.0)]
+        link = _build_whatsapp_link(42, "Alice", 100.0, items)
+        assert "100.00" in link
 
-        mock_supabase = MagicMock()
-        mock_supabase.table.return_value.select.return_value.eq.return_value.eq.return_value.execute.return_value.data = [
-            {"id": "x"}
-        ] * 5
-        _assert_open_order_cap(mock_supabase, "user-123")
-
-    def test_checkout_returns_400_when_cap_exceeded(self):
-        from fastapi import HTTPException
-
-        from app.adapters import order_intake
-
-        with patch.object(
-            order_intake,
-            "_assert_open_order_cap",
-            side_effect=HTTPException(status_code=400, detail="Too many open pending orders"),
-        ):
-            client = TestClient(app)
-            token = _make_token()
-            resp = client.post(
-                "/checkout",
-                json={"items": [{"product_id": "00000000-0000-0000-0000-000000000001", "quantity": 1}]},
-                headers={"Authorization": f"Bearer {token}"},
-            )
-        assert resp.status_code == 400
-        assert "Too many open pending orders" in resp.json()["detail"]
+    def test_whatsapp_link_contains_item_details(self):
+        items = [OrderItemResponse(product_id="p1", title="Test Product", quantity_ordered=2, unit_price_applied=50.0)]
+        link = _build_whatsapp_link(42, "Alice", 100.0, items)
+        from urllib.parse import unquote
+        decoded = unquote(link)
+        assert "2x Test Product" in decoded
 
 
 class TestCheckoutRateLimit:
@@ -284,21 +323,14 @@ class TestCheckoutRateLimit:
 
         limiter.enabled = True
         try:
-            with (
-                patch("app.adapters.order_intake.resolve_all_items", return_value=[]),
-                patch("app.adapters.order_intake.check_availability", return_value=[]),
-                patch("app.adapters.order_intake.run_in_transaction", return_value={"order_id": "o", "readable_order_id": 1, "commit": True}),
-                patch("app.adapters.order_intake.build_order_link", return_value="https://wa.me/123"),
-                patch("app.adapters.order_intake.broadcast_order_update"),
-            ):
-                client = TestClient(app)
-                token = _make_token()
-                headers = {"Authorization": f"Bearer {token}"}
-                statuses = [
-                    client.post("/checkout", json={"items": [{"product_id": "00000000-0000-0000-0000-000000000001", "quantity": 1}]}, headers=headers).status_code
-                    for _ in range(11)
-                ]
-                assert statuses[:10] == [200] * 10
-                assert statuses[10] == 429
+            client = TestClient(app)
+            token = _make_token()
+            headers = {"Authorization": f"Bearer {token}"}
+            statuses = [
+                client.post("/checkout", json={"items": [{"product_id": "default", "quantity": 1}]}, headers=headers).status_code
+                for _ in range(11)
+            ]
+            assert statuses[:10] == [200] * 10
+            assert statuses[10] == 429
         finally:
             limiter.enabled = False

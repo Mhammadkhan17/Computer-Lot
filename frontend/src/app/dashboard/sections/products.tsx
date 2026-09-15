@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect, useCallback } from "react"
 import { Search, Plus, Upload, Download, Pencil, Trash2, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { createClient } from "@/utils/supabase/client"
@@ -15,8 +15,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { ProductFormDialog } from "@/components/product-form"
-import { broadcastProductUpdate } from "@/lib/product-events"
+import { AddProductModal } from "./add-product-modal"
+import { EditProductModal } from "./edit-product-modal"
+import { useWebSocket } from "@/hooks/useWebSocket"
 import type { Product } from "@/types"
 
 const currencyFormat = new Intl.NumberFormat("en-US", {
@@ -31,16 +32,37 @@ const gradeVariant: Record<string, "outline" | "secondary" | "default" | "destru
   For_Parts: "destructive",
 }
 
-interface ProductsSectionProps {
-  products: Product[]
-  loading: boolean
-  onRefresh?: () => void
-}
-
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
-export function ProductsSection({ products, loading, onRefresh }: ProductsSectionProps) {
+async function broadcastProductUpdate() {
+  try {
+    const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.access_token) return
+    await fetch(`${API_URL}/admin/products/broadcast-update`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+  } catch {
+    // best-effort
+  }
+}
+
+export function ProductsSection() {
+  const [products, setProducts] = useState<Product[]>([])
+  const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
+
+  const refresh = useCallback(async () => {
+    const supabase = createClient()
+    const { data } = await supabase.from("products").select("*").order("created_at", { ascending: false })
+    if (data) setProducts(data)
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { refresh() }, [refresh])
+
+  useWebSocket("product_update", useCallback(() => { window.location.reload() }, []))
   const [importing, setImporting] = useState(false)
   const [importErrors, setImportErrors] = useState<{ row: number; sku: string; reason: string }[] | null>(null)
   const [importInserted, setImportInserted] = useState(0)
@@ -76,10 +98,7 @@ export function ProductsSection({ products, loading, onRefresh }: ProductsSectio
         toast.error(`Inserted ${result.inserted} product(s) with ${result.errors.length} error(s)`)
       } else {
         toast.success(`Inserted ${result.inserted} product(s)`)
-        setImportErrors(null)
-        setImportInserted(0)
-        broadcastProductUpdate()
-        onRefresh?.()
+        window.location.reload()
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Import failed")
@@ -131,7 +150,7 @@ export function ProductsSection({ products, loading, onRefresh }: ProductsSectio
       toast.success("Product deleted")
       broadcastProductUpdate()
       setDeleteConfirm(null)
-      onRefresh?.()
+      window.location.reload()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to delete product")
       setDeleteConfirm(null)
@@ -194,16 +213,12 @@ export function ProductsSection({ products, loading, onRefresh }: ProductsSectio
               <Download className="mr-1 h-4 w-4" />
               Template
             </Button>
-            <ProductFormDialog
-              mode="create"
-              onSuccess={onRefresh}
-              trigger={
-                <Button size="sm" className="bg-accent text-accent-foreground hover:bg-accent/90">
-                  <Plus className="mr-1 h-4 w-4" />
-                  Add Product
-                </Button>
-              }
-            />
+            <AddProductModal onSuccess={() => window.location.reload()}>
+              <Button size="sm" className="bg-accent text-accent-foreground hover:bg-accent/90">
+                <Plus className="mr-1 h-4 w-4" />
+                Add Product
+              </Button>
+            </AddProductModal>
           </div>
         </CardHeader>
         <CardContent className="p-4">
@@ -302,16 +317,8 @@ export function ProductsSection({ products, loading, onRefresh }: ProductsSectio
                           {product.grade.replace("_", " ")}
                         </Badge>
                       </td>
-                      <td className="py-2 pr-4">
-                        {product.available_stock_lots === 0 ? (
-                          <Badge variant="destructive" className="text-xs">
-                            Out of Stock
-                          </Badge>
-                        ) : (
-                          <span className="font-mono text-sm text-foreground">
-                            {product.available_stock_lots}
-                          </span>
-                        )}
+                      <td className="py-2 pr-4 font-mono text-sm text-foreground">
+                        {product.available_stock_lots}
                       </td>
                       <td className="py-2 pr-4 font-mono text-sm text-foreground">
                         {currencyFormat.format(Number(product.retail_price_per_lot))}
@@ -321,19 +328,14 @@ export function ProductsSection({ products, loading, onRefresh }: ProductsSectio
                       </td>
                       <td className="py-2">
                         <div className="flex gap-1">
-                            <ProductFormDialog
-                              mode="edit"
-                              product={product}
-                              onSuccess={onRefresh}
-                              trigger={
-                                <button
-                                  className="rounded-sm p-1 max-sm:min-h-[44px] max-sm:min-w-[44px] text-muted-foreground hover:text-foreground hover:bg-accent/10 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                                  aria-label={`Edit ${product.title}`}
-                                >
-                                  <Pencil className="h-4 w-4" />
-                                </button>
-                              }
-                            />
+                            <EditProductModal product={product} onSuccess={() => window.location.reload()}>
+                            <button
+                              className="rounded-sm p-1 max-sm:min-h-[44px] max-sm:min-w-[44px] text-muted-foreground hover:text-foreground hover:bg-accent/10 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                              aria-label={`Edit ${product.title}`}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                          </EditProductModal>
                             <button
                               className="rounded-sm p-1 max-sm:min-h-[44px] max-sm:min-w-[44px] text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                               aria-label={`Delete ${product.title}`}

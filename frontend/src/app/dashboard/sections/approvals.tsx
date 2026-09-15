@@ -1,23 +1,39 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { toast } from "sonner"
 import { createClient } from "@/utils/supabase/client"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
-import type { AdminProfile } from "@/types"
+import { useWebSocket } from "@/hooks/useWebSocket"
 
-interface ApprovalsSectionProps {
-  pendingProfiles: AdminProfile[]
-  loading: boolean
-  onAction?: () => void
+interface Profile {
+  id: string
+  full_name: string
+  company_name?: string
+  tax_registration_id?: string
+  role: string
+  created_at: string
 }
 
-export function ApprovalsSection({ pendingProfiles, loading, onAction }: ApprovalsSectionProps) {
+export function ApprovalsSection() {
+  const [pendingProfiles, setPendingProfiles] = useState<Profile[]>([])
+  const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  const refresh = useCallback(async () => {
+    const supabase = createClient()
+    const { data } = await supabase.from("profiles").select("*").eq("role", "wholesale_pending")
+    if (data) setPendingProfiles(data)
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { refresh() }, [refresh])
+
+  useWebSocket("profile_update", useCallback(() => { refresh() }, [refresh]))
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
@@ -43,7 +59,7 @@ export function ApprovalsSection({ pendingProfiles, loading, onAction }: Approva
         throw new Error(data.detail || "Action failed")
       }
       toast.success(action === "approve" ? "Wholesale request approved" : "Wholesale request rejected")
-      onAction?.()
+      refresh()
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Action failed"
       setError(msg)
