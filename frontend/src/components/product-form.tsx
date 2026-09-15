@@ -48,7 +48,6 @@ const defaultState = {
   items_per_lot: "1",
   retail_price_per_lot: "",
   wholesale_price_per_lot: "",
-  approved_price_per_lot: "",
   minimum_wholesale_lots: "5",
   available_stock_lots: "0",
   image_urls: "",
@@ -78,7 +77,6 @@ function initialStateFor(product?: Product) {
     items_per_lot: String(product.items_per_lot),
     retail_price_per_lot: String(product.retail_price_per_lot),
     wholesale_price_per_lot: String(product.wholesale_price_per_lot),
-    approved_price_per_lot: String(product.approved_price_per_lot),
     minimum_wholesale_lots: String(product.minimum_wholesale_lots),
     available_stock_lots: String(product.available_stock_lots),
     image_urls: Array.isArray(product.images) ? product.images.join(", ") : "",
@@ -209,21 +207,6 @@ export function ProductFormDialog({ mode, product, onSuccess, trigger }: Product
       setSaving(false)
       return
     }
-    // Three-tier pricing: approved price is optional in the form and defaults
-    // to the wholesale value (migration-009 backfill). When provided it must
-    // be > 0 and <= wholesale (mirror of products_approved_price_check).
-    const approvedRaw = form.approved_price_per_lot.trim()
-    const approvedPrice = approvedRaw ? Number.parseFloat(approvedRaw) : wholesalePrice
-    if (approvedRaw && (Number.isNaN(approvedPrice) || approvedPrice <= 0)) {
-      toast.error("Approved price must be greater than 0")
-      setSaving(false)
-      return
-    }
-    if (approvedPrice > wholesalePrice) {
-      toast.error("Approved price must be less than or equal to the wholesale price")
-      setSaving(false)
-      return
-    }
     const itemsPerLot = Number.parseInt(form.items_per_lot, 10)
     const minWholesaleLots = Number.parseInt(form.minimum_wholesale_lots, 10)
     if (!Number.isNaN(itemsPerLot) && itemsPerLot <= 0) {
@@ -275,7 +258,6 @@ export function ProductFormDialog({ mode, product, onSuccess, trigger }: Product
         items_per_lot: Number.isNaN(itemsPerLot) ? 1 : itemsPerLot,
         retail_price_per_lot: price,
         wholesale_price_per_lot: wholesalePrice,
-        approved_price_per_lot: approvedPrice,
         minimum_wholesale_lots: Number.isNaN(minWholesaleLots) ? 5 : minWholesaleLots,
         available_stock_lots: Number.parseInt(form.available_stock_lots, 10) || 0,
         images: images.length > 0 ? images : null,
@@ -375,16 +357,6 @@ export function ProductFormDialog({ mode, product, onSuccess, trigger }: Product
                 Paid by any customer whose cart reaches 10+ lots.
               </p>
             </div>
-          </div>
-
-          <div className="space-y-1">
-            <label htmlFor={fieldId("approved-price")} className="text-xs font-medium text-foreground">Approved price ($)</label>
-            <Input id={fieldId("approved-price")} name="approved_price_per_lot" type="number" inputMode="decimal" step="0.01" min="0" value={form.approved_price_per_lot} onChange={set("approved_price_per_lot")} placeholder="Same as wholesale if blank" autoComplete="off" />
-            <p className="text-xs text-muted-foreground">
-              Paid by wholesale-approved buyers on any order size (min lots still applies).
-              Set it <span className="font-semibold">lower</span> than the wholesale price
-              to give approved buyers a deeper discount. Blank defaults to the wholesale price.
-            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">

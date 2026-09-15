@@ -30,20 +30,6 @@ def validate_row(row: dict) -> tuple[dict, list[str]]:
     if retail is not None and wholesale is not None and wholesale > retail:
         errs.append("Wholesale price must be <= retail price")
 
-    # Three-tier pricing: approved_price_per_lot is OPTIONAL in the CSV.
-    # Blank defaults to the wholesale value (matching the migration-009
-    # backfill); when provided it must be > 0 and <= wholesale (mirror of the
-    # products_approved_price_check DB CHECK). Old CSVs without the column
-    # keep working via row.get() defaulting to "".
-    approved_raw = row.get("approved_price_per_lot", "").strip()
-    approved = None
-    if approved_raw:
-        approved, approved_err = _parse_float(approved_raw, "approved price")
-        if approved_err:
-            errs.append(approved_err)
-        elif approved is not None and wholesale is not None and approved > wholesale:
-            errs.append("Approved price must be <= wholesale price")
-
     stock = None
     stock_raw = row.get("available_stock_lots", "0")
     try:
@@ -88,7 +74,6 @@ def validate_row(row: dict) -> tuple[dict, list[str]]:
         "items_per_lot": items_per_lot,
         "retail_price_per_lot": retail,
         "wholesale_price_per_lot": wholesale,
-        "approved_price_per_lot": approved,
         "minimum_wholesale_lots": min_wholesale,
         "available_stock_lots": stock,
     }, []

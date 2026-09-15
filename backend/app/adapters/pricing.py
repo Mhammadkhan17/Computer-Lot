@@ -2,38 +2,21 @@ from app.schemas.order import OrderItemResponse
 
 
 def resolve_price(product: dict, quantity: int, role: str, total_lots: int) -> float:
-    """Resolve the unit price for one line item under the three-tier rule.
+    """Resolve the unit price for one line item under the two-tier rule.
 
-    Authoritative pricing rule (see docs/superpowers/specs/2026-08-03-three-tier-pricing-design.md).
-    Resolved in this order for each line item:
+    Authoritative pricing rule (ADR-001, post reversion from three-tier):
       1. quantity < minimum_wholesale_lots        -> retail_price_per_lot
-      2. role == "wholesale_approved" (any size)  -> approved_price_per_lot
-      3. total_lots >= 10 (any role, incl. admin) -> wholesale_price_per_lot
-      4. otherwise                                -> retail_price_per_lot
+      2. total_lots >= 10 (any role, incl. admin) -> wholesale_price_per_lot
+      3. otherwise                                -> retail_price_per_lot
 
-    ``approved_price_per_lot`` is NOT NULL in the DB (migration 009), but the
-    key may be absent in test fixtures or stale product payloads; in that case
-    we defensively fall back to the wholesale price (the documented backfill
-    value). Mirrors of the DB CHECKs (products_approved_price_check, migration
-    009, and products_wholesale_price_check, migration 010): bad config
-    (approved > wholesale or wholesale > retail) is never passed through to the
-    customer — we clamp to the retail price rather than overcharge.
+    The role parameter is retained for backward compatibility with
+    order_intake.resolve_all_items() but does not alter pricing.
     """
     retail = float(product["retail_price_per_lot"])
     wholesale = float(product["wholesale_price_per_lot"])
 
     if quantity < product["minimum_wholesale_lots"]:
         return retail
-
-    if role == "wholesale_approved":
-        approved = product.get("approved_price_per_lot")
-        if approved is not None:
-            approved_float = float(approved)
-            if approved_float <= wholesale:
-                return min(approved_float, retail)
-        # Key absent (fixtures) or approved > wholesale (config error):
-        # fall back to wholesale, still never above retail.
-        return min(wholesale, retail)
 
     if total_lots >= 10:
         return min(wholesale, retail)

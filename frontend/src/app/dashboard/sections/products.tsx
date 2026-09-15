@@ -282,7 +282,6 @@ export function ProductsSection({ products, loading, onRefresh }: ProductsSectio
                     <th className="pb-2 pr-4">Stock</th>
                     <th className="pb-2 pr-4">Retail</th>
                     <th className="pb-2 pr-4">Wholesale</th>
-                    <th className="pb-2 pr-4">Approved</th>
                     <th className="pb-2">Actions</th>
                   </tr>
                 </thead>
@@ -319,9 +318,6 @@ export function ProductsSection({ products, loading, onRefresh }: ProductsSectio
                       </td>
                       <td className="py-2 pr-4 font-mono text-sm text-primary">
                         {currencyFormat.format(Number(product.wholesale_price_per_lot))}
-                      </td>
-                      <td className="py-2 pr-4 font-mono text-sm text-primary">
-                        {currencyFormat.format(Number(product.approved_price_per_lot))}
                       </td>
                       <td className="py-2">
                         <div className="flex gap-1">

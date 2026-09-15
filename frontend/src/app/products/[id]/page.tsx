@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation"
 import { createClient } from "@/utils/supabase/server"
 import { ProductDetailContent } from "./product-detail-content"
-import type { Product, UserRole } from "@/types"
+import type { Product } from "@/types"
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -36,7 +36,6 @@ export default async function ProductDetailPage({ params }: PageProps) {
 
   const { data: { user } } = await supabase.auth.getUser()
   let isAdmin = false
-  let role: UserRole | null = null
   if (user) {
     const { data: profile } = await supabase
       .from("profiles")
@@ -44,7 +43,6 @@ export default async function ProductDetailPage({ params }: PageProps) {
       .eq("id", user.id)
       .single()
     isAdmin = profile?.role === "admin"
-    role = (profile?.role as UserRole | undefined) ?? null
   }
 
   return (
@@ -52,7 +50,6 @@ export default async function ProductDetailPage({ params }: PageProps) {
       product={product as Product}
       relatedPool={(pool as Product[]) || []}
       isAdmin={isAdmin}
-      role={role}
     />
   )
 }

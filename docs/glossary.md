@@ -5,13 +5,13 @@
 | **Lot** | The basic trading unit of a product. A lot may contain multiple items (e.g., "10 CPUs per lot"). Users buy lots, not individual components. |
 | **Retail** | Default user role. Standard pricing on all products. |
 | **Wholesale Pending** | User who submitted wholesale application (company_name + tax_registration_id) but hasn't been approved yet. |
-| **Wholesale Approved** | User role granting access to the approved-price tier (deeper discount than wholesale) on any order size, subject to per-product minimums. |
+| **Wholesale Approved** | User role granting access to wholesale pricing at ≥ 10+ lots on any order. |
 | **Admin** | Full system access — can manage products, orders, user approvals. Follows the uniform pricing rule (wholesale at ≥ 10 lots). |
 | **Grade_A / Grade_B / Grade_C / For_Parts** | Product condition grading from best (A) to worst (For_Parts = damaged/as-is). |
-| **Minimum Wholesale Lots** | Per-product threshold. Applies to ALL discount tiers — a user must buy at least this many lots of a product to get its wholesale or approved price. |
+| **Minimum Wholesale Lots** | Per-product threshold. Applies to ALL discount tiers — a user must buy at least this many lots of a product to get its wholesale price. |
 | **Total Lots Threshold** | Order-wide minimum of 10 lots for the wholesale tier. Sum of all item quantities in the order. Available to any signed-in user, including admins. |
-| **Approved Price** | Per-product price (`approved_price_per_lot`) paid by `wholesale_approved` users on any order size (subject to per-product minimums). Must be ≤ the wholesale price, which must be ≤ the retail price. Set it lower than wholesale to give approved buyers a real discount — the default equals wholesale, so no discount until the merchant edits it. |
-| **Hybrid Pricing** | Pricing model where a single order can mix retail, wholesale, and approved line items based on per-product and per-order thresholds. |
+| **Wholesale Price** | Per-product price (`wholesale_price_per_lot`) paid by any user whose cart reaches 10+ lots. Must be ≤ the retail price. |
+| **Hybrid Pricing** | Pricing model where a single order can mix retail and wholesale line items based on per-product and per-order thresholds. |
 | **WhatsApp Fulfillment** | Order delivery model — no payment gateway. Orders generate a WhatsApp Business deep link for manual merchant fulfillment. |
 | **Atomic Stock Decrement** | PostgreSQL function (`decrement_stock_inventory`) that safely reduces stock with a built-in availability check. |
 | **All-or-Nothing Transaction** | Checkout processes all items in a single DB transaction. If any item fails, the entire order is rolled back. |

@@ -7,12 +7,6 @@ def normalize_row(row: dict) -> dict:
     specs = _parse_json(row.get("hardware_specifications"))
 
     wholesale = row["wholesale_price_per_lot"]
-    # approved_price_per_lot is optional in the CSV; a row without it (or a
-    # blank value) falls back to the wholesale price so inserts always satisfy
-    # the migration-009 NOT NULL column and its approved <= wholesale CHECK.
-    approved = row.get("approved_price_per_lot")
-    if approved is None:
-        approved = wholesale
 
     return {
         "title": row["title"],
@@ -22,7 +16,6 @@ def normalize_row(row: dict) -> dict:
         "items_per_lot": row.get("items_per_lot", 1),
         "retail_price_per_lot": row["retail_price_per_lot"],
         "wholesale_price_per_lot": wholesale,
-        "approved_price_per_lot": approved,
         "minimum_wholesale_lots": row.get("minimum_wholesale_lots", 5),
         "available_stock_lots": row["available_stock_lots"],
         "images": images,

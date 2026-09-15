@@ -9,14 +9,37 @@ import {
   Dialog,
   DialogContent,
 } from "@/components/ui/dialog"
-import type { Product, UserRole } from "@/types"
+import type { Product } from "@/types"
 import { ProductCard } from "@/components/product-card"
-import { resolvePrice, resolveTier } from "@/lib/pricing"
 
 const currencyFormat = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
 })
+
+type PricingTier = "RETAIL" | "WHOLESALE"
+
+function resolvePrice(
+  product: Product,
+  quantity: number,
+  totalLots: number
+): number {
+  const retail = Number(product.retail_price_per_lot)
+  const wholesale = Number(product.wholesale_price_per_lot)
+  if (quantity < product.minimum_wholesale_lots) return retail
+  if (totalLots >= 10) return Math.min(wholesale, retail)
+  return retail
+}
+
+function resolveTier(
+  product: Product,
+  quantity: number,
+  totalLots: number
+): PricingTier {
+  if (quantity < product.minimum_wholesale_lots) return "RETAIL"
+  if (totalLots >= 10) return "WHOLESALE"
+  return "RETAIL"
+}
 
 const gradeConfig: Record<string, { label: string; color: string; full: string }> = {
   Grade_A: { label: "A", color: "bg-grade-a", full: "Grade A" },
@@ -29,10 +52,9 @@ interface ProductDetailContentProps {
   product: Product
   relatedPool: Product[]
   isAdmin?: boolean
-  role?: UserRole | null
 }
 
-export function ProductDetailContent({ product, relatedPool, isAdmin, role = null }: ProductDetailContentProps) {
+export function ProductDetailContent({ product, relatedPool, isAdmin }: ProductDetailContentProps) {
   const addItem = useCart((s) => s.addItem)
   const cartItems = useCart((s) => s.items)
   const inStock = product.available_stock_lots > 0
@@ -41,17 +63,17 @@ export function ProductDetailContent({ product, relatedPool, isAdmin, role = nul
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const grade = gradeConfig[product.grade]
 
-  // Applicable tier for THIS shopper, using the shared pricing mirror
-  // (lib/pricing.ts <-> backend/app/adapters/pricing.py). Quantity is the
+  // Applicable tier for THIS shopper, using the same rule as backend
+  // app/adapters/pricing.py (retail / wholesale at 10+ lots). Quantity is the
   // current cart line for this product, else the minimum qualifying purchase;
-  // total lots includes this line so an approved user / 10+ bulk order is
-  // reflected live in the highlighted tier and the mobile bottom-bar price.
+  // total lots includes this line so a 10+ bulk order is reflected live in
+  // the highlighted tier and the mobile bottom-bar price.
   const existingLine = cartItems.find((i) => i.product.id === product.id)
   const displayQty = existingLine ? existingLine.quantity : Math.max(product.minimum_wholesale_lots, 1)
   const prospectiveTotal =
     cartItems.reduce((sum, i) => sum + i.quantity, 0) + (existingLine ? 0 : displayQty)
-  const displayTier = resolveTier(product, displayQty, role, prospectiveTotal)
-  const displayPrice = resolvePrice(product, displayQty, role, prospectiveTotal)
+  const displayTier = resolveTier(product, displayQty, prospectiveTotal)
+  const displayPrice = resolvePrice(product, displayQty, prospectiveTotal)
 
   const images = product.images?.length ? product.images : []
   const specs = product.hardware_specifications
@@ -478,17 +500,7 @@ export function ProductDetailContent({ product, relatedPool, isAdmin, role = nul
                 {currencyFormat.format(Number(product.wholesale_price_per_lot))}
                 <span className="ml-1 text-sm font-normal text-muted-foreground">/lot</span>
               </span>
-            </div>
-            <div className={`flex items-center justify-between ${displayTier === "APPROVED" ? "rounded-sm bg-accent/10 px-2 py-1" : ""}`}>
-              <span className="text-sm text-muted-foreground">
-                Approved price
-                {displayTier === "APPROVED" && <span className="ml-2 font-mono text-[10px] font-bold text-accent">YOUR TIER</span>}
-              </span>
-              <span className="font-mono text-lg font-bold text-primary tabular-nums">
-                {currencyFormat.format(Number(product.approved_price_per_lot))}
-                <span className="ml-1 text-sm font-normal text-muted-foreground">/lot</span>
-              </span>
-            </div>
+             </div>
             {product.minimum_wholesale_lots > 1 && (
               <p className="text-xs text-muted-foreground">
                 Discount pricing requires minimum {product.minimum_wholesale_lots} lots per line

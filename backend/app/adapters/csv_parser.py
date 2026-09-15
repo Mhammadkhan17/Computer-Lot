@@ -3,7 +3,7 @@ import io
 
 CSV_HEADERS = [
     "title", "sku", "description", "grade", "items_per_lot",
-    "retail_price_per_lot", "wholesale_price_per_lot", "approved_price_per_lot",
+    "retail_price_per_lot", "wholesale_price_per_lot",
     "minimum_wholesale_lots",
     "available_stock_lots", "image_urls", "tags", "hardware_specifications",
 ]
@@ -16,7 +16,6 @@ TEMPLATE_ROW = {
     "items_per_lot": "1",
     "retail_price_per_lot": "199.99",
     "wholesale_price_per_lot": "149.99",
-    "approved_price_per_lot": "139.99",
     "minimum_wholesale_lots": "5",
     "available_stock_lots": "20",
     "image_urls": "https://example.com/img1.jpg, https://example.com/img2.jpg",

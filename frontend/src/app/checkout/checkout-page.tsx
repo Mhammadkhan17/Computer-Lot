@@ -5,13 +5,37 @@ import { ArrowLeft, ImageOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { CheckoutButton } from "@/components/checkout-button"
 import { useCart } from "@/hooks/useCart"
-import { useUserRole, useUserRoleLoaded } from "@/hooks/useUserRole"
-import { resolvePrice, resolveTier } from "@/lib/pricing"
+import { useUserRoleLoaded } from "@/hooks/useUserRole"
+import type { Product } from "@/types"
 
 const currencyFormat = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
 })
+
+type PricingTier = "RETAIL" | "WHOLESALE"
+
+function resolvePrice(
+  product: Product,
+  quantity: number,
+  totalLots: number
+): number {
+  const retail = Number(product.retail_price_per_lot)
+  const wholesale = Number(product.wholesale_price_per_lot)
+  if (quantity < product.minimum_wholesale_lots) return retail
+  if (totalLots >= 10) return Math.min(wholesale, retail)
+  return retail
+}
+
+function resolveTier(
+  product: Product,
+  quantity: number,
+  totalLots: number
+): PricingTier {
+  if (quantity < product.minimum_wholesale_lots) return "RETAIL"
+  if (totalLots >= 10) return "WHOLESALE"
+  return "RETAIL"
+}
 
 const gradeColors: Record<string, string> = {
   Grade_A: "bg-grade-a",
@@ -22,15 +46,14 @@ const gradeColors: Record<string, string> = {
 
 export function CheckoutPage() {
   const { items, totalLots } = useCart()
-  const role = useUserRole()
   const roleLoaded = useUserRoleLoaded()
 
   const totalLotsCount = totalLots()
   const linePrices = items.map((item) =>
-    resolvePrice(item.product, item.quantity, role, totalLotsCount)
+    resolvePrice(item.product, item.quantity, totalLotsCount)
   )
   const lineTiers = items.map((item) =>
-    resolveTier(item.product, item.quantity, role, totalLotsCount)
+    resolveTier(item.product, item.quantity, totalLotsCount)
   )
   const uniqueTiers = Array.from(new Set(lineTiers))
   const summaryTier = uniqueTiers.length === 1 ? uniqueTiers[0] : "MIXED"

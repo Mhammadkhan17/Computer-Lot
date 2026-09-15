@@ -155,34 +155,34 @@ export function Overview({ orders, products, pendingApprovalsCount, loading }: O
       </div>
 
       <section
-        className="border border-surface-dark-border bg-surface-dark"
+        className="border border-border bg-card"
         aria-label="Revenue summary"
       >
         <div className="grid gap-6 p-5 sm:grid-cols-[1.2fr_1fr] sm:gap-0 sm:p-0">
           <div className="animate-in fade-in duration-500 sm:px-6 sm:py-7">
-            <p className="font-mono text-[11px] font-medium tracking-[0.18em] text-text-dark-muted uppercase">
+            <p className="font-mono text-[11px] font-medium tracking-[0.18em] text-muted-foreground uppercase">
               Revenue · All orders
             </p>
             {loading ? (
-              <Skeleton className="mt-3 h-10 w-48 bg-white/10" />
+              <Skeleton className="mt-3 h-10 w-48 bg-muted" />
             ) : (
-              <p className="mt-2 font-mono text-4xl font-medium text-white tabular-nums sm:text-5xl">
+              <p className="mt-2 font-mono text-4xl font-medium text-foreground tabular-nums sm:text-5xl">
                 {currencyFormat.format(totalRevenue)}
               </p>
             )}
-            <p className="mt-3 font-mono text-xs text-text-dark-muted">
+            <p className="mt-3 font-mono text-xs text-muted-foreground">
               {orders.length.toLocaleString()} orders · {totalLots.toLocaleString()} lots
               {orders.length > 0 ? ` · ${Math.round(totalRevenue / orders.length)} avg/order` : ""}
             </p>
           </div>
 
-          <div className="grid grid-cols-3 divide-x divide-surface-dark-border border-t border-surface-dark-border sm:border-t-0">
+          <div className="grid grid-cols-3 divide-x divide-border border-t border-border sm:border-t-0">
             {tallies.map((tally) => (
               <div key={tally.label} className="flex flex-col justify-center px-4 py-5 sm:px-5">
-                <p className="font-mono text-lg font-medium text-white tabular-nums">
-                  {loading ? <Skeleton className="h-6 w-16 bg-white/10" /> : tally.value}
+                <p className="font-mono text-lg font-medium text-foreground tabular-nums">
+                  {loading ? <Skeleton className="h-6 w-16 bg-muted" /> : tally.value}
                 </p>
-                <p className="mt-1 font-mono text-[10px] font-medium tracking-[0.14em] text-text-dark-muted uppercase">
+                <p className="mt-1 font-mono text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
                   {tally.label}
                 </p>
               </div>

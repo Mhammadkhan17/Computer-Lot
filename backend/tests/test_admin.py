@@ -504,8 +504,4 @@ class TestAdminProducts:
         assert call_args["sku"] == "CPU-999"
         assert call_args["retail_price_per_lot"] == 199.99
         assert call_args["wholesale_price_per_lot"] == 149.99
-        # Old CSVs without the approved_price_per_lot column must still work:
-        # the normalizer defaults it to the wholesale price (migration-009
-        # backfill semantics) so the NOT NULL column is always satisfied.
-        assert call_args["approved_price_per_lot"] == 149.99
         assert call_args["available_stock_lots"] == 10

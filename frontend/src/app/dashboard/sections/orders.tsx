@@ -34,17 +34,17 @@ function OrderFlowStrip({ orders, loading }: { orders: AdminOrder[]; loading: bo
 
   return (
     <section
-      className="border border-surface-dark-border bg-surface-dark"
+      className="border border-border bg-card"
       aria-label="Order flow by stage"
     >
       <div className="p-5 sm:px-6">
-        <p className="font-mono text-[11px] font-medium tracking-[0.18em] text-text-dark-muted uppercase">
+        <p className="font-mono text-[11px] font-medium tracking-[0.18em] text-muted-foreground uppercase">
           Order flow
         </p>
         <div className="relative mt-7">
           <div
             aria-hidden="true"
-            className="absolute inset-x-[12%] top-[10px] h-px bg-surface-dark-border"
+            className="absolute inset-x-[12%] top-[10px] h-px bg-border"
           />
           <div className="relative grid grid-cols-3">
             {STATUS_FLOW.map((status) => {
@@ -54,13 +54,13 @@ function OrderFlowStrip({ orders, loading }: { orders: AdminOrder[]; loading: bo
                 <div key={status} className="flex flex-col items-center px-2 text-center">
                   <span
                     aria-hidden="true"
-                    className="relative z-10 size-5 rounded-full border border-surface-dark-border"
+                    className="relative z-10 size-5 rounded-full border border-border"
                     style={{ backgroundColor: meta.color }}
                   />
-                  <p className="mt-3 font-mono text-2xl font-medium text-white tabular-nums">
-                    {loading ? <Skeleton className="mx-auto h-7 w-10 bg-white/10" /> : count}
+                  <p className="mt-3 font-mono text-2xl font-medium text-foreground tabular-nums">
+                    {loading ? <Skeleton className="mx-auto h-7 w-10 bg-muted" /> : count}
                   </p>
-                  <p className="mt-1 font-mono text-[10px] font-medium tracking-[0.14em] text-text-dark-muted uppercase">
+                  <p className="mt-1 font-mono text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
                     {meta.label}
                   </p>
                 </div>
@@ -68,15 +68,15 @@ function OrderFlowStrip({ orders, loading }: { orders: AdminOrder[]; loading: bo
             })}
           </div>
         </div>
-        <div className="mt-6 flex items-center gap-3 border-t border-surface-dark-border pt-4">
+        <div className="mt-6 flex items-center gap-3 border-t border-border pt-4">
           <span
             aria-hidden="true"
             className="size-2 rounded-full bg-muted-foreground"
           />
-          <p className="font-mono text-[10px] font-medium tracking-[0.14em] text-text-dark-muted uppercase">
+          <p className="font-mono text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
             Sidetrack · Cancelled
           </p>
-          <p className="ml-auto font-mono text-sm text-text-dark-muted tabular-nums">
+          <p className="ml-auto font-mono text-sm text-muted-foreground tabular-nums">
             {cancelledCount} {cancelledCount === 1 ? "order" : "orders"}
           </p>
         </div>

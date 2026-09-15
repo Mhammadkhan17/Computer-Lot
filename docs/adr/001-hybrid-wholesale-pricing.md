@@ -1,39 +1,31 @@
-# ADR-001: Hybrid Wholesale Pricing Model (Three-Tier)
+# ADR-001: Hybrid Wholesale Pricing Model
 
-**Status:** Accepted (amended 2026-08-03 — see "Amendment" below)
+**Status:** Accepted (reverted to original two-tier 2026-08-22 — see "Reversion" below)
 **Date:** 2026-07-18
-**Context:** The platform serves both B2C retail and B2B wholesale customers. We need clear rules for when wholesale pricing applies to an order. The merchant subsequently wanted a deeper discount tier for vetted businesses, plus volume-based wholesale access for normal bulk buyers.
+**Context:** The platform serves both B2C retail and B2B wholesale customers. We need clear rules for when wholesale pricing applies to an order.
 
-## Original Decision (2026-07-18)
-- User must have `wholesale_approved` role
+## Decision
 - Total lots across ALL items in the order must be ≥ 10
 - Each line item gets wholesale pricing **only if** `quantity >= product.minimum_wholesale_lots`
 - Items below their per-product minimum are priced at retail, even within an otherwise-wholesale order
 
-## Amendment (2026-08-03) — Three-Tier Pricing
-Supercedes the original decision. Authoritative rule (backend `app/adapters/pricing.py`, spec `docs/superpowers/specs/2026-08-03-three-tier-pricing-design.md`):
+## Reversion (2026-08-22) — Removal of Three-Tier Pricing
+The three-tier amendment (2026-08-03) has been reverted. The `approved_price_per_lot` column and all three-tier pricing logic have been removed. Authoritative rule (backend `app/adapters/pricing.py`):
 
 1. `quantity < minimum_wholesale_lots` → `retail_price_per_lot`
-2. `role == "wholesale_approved"` (any order size) → `approved_price_per_lot`
-3. `total_lots >= 10` (any role, incl. admin) → `wholesale_price_per_lot`
-4. otherwise → `retail_price_per_lot`
+2. `total_lots >= 10` (any signed-in user incl. admin) → `wholesale_price_per_lot`
+3. otherwise → `retail_price_per_lot`
 
-**Decision changes:**
-- **Wholesale is now a volume tier** for ANY signed-in user (retail, wholesale_pending, admin) whose order totals ≥ 10 lots — no longer gated to `wholesale_approved`.
-- **New approved tier**: a third per-product price (`products.approved_price_per_lot`) defined by the merchant. `wholesale_approved` users pay it on any order size (no 10-lot total), subject to the per-product minimum.
+**Decision changes from reversion:**
+- **Wholesale is a volume tier** for ANY signed-in user whose order totals ≥ 10 lots.
 - **Admin follows the uniform rule** (treated like any user at ≥ 10 lots → wholesale). No special case.
-- **Per-product `minimum_wholesale_lots` applies to ALL tiers** (cannot buy 1 lot of a 5-min product at a tier price).
-- `approved_price_per_lot <= wholesale_price_per_lot` enforced by DB CHECK (`products_approved_price_check`, migration 009) and mirrored in form/CSV validation.
-- Backfill (migration 009): existing products got `approved_price_per_lot = wholesale_price_per_lot`. **This DID change pricing for `wholesale_approved` users on orders under 10 lots** — every qualifying line went from retail to wholesale. The merchant must set `approved_price_per_lot` deliberately (lower than wholesale) to control approved-tier margin.
-- Product cards show a role-aware second tier row (Approved for `wholesale_approved` users, Wholesale otherwise) plus a `· 10+ lots` volume hint; the approved tier also appears on the product detail page, cart, and checkout.
+- **Per-product `minimum_wholesale_lots` applies to ALL tier transitions** — cannot buy 1 lot of a product that requires 5 minimum.
 - `wholesale_price_per_lot <= retail_price_per_lot` enforced by DB CHECK (`products_wholesale_price_check`, migration 010) and mirrored in form/CSV validation; the pricing code never charges above retail even for stale data.
-
-**Merchant action required:** after the three-tier rollout, existing `wholesale_approved` customers are now paying wholesale pricing on orders under 10 lots. Review and set `approved_price_per_lot` (below wholesale) to define the approved-tier discount, or keep it equal to wholesale to treat approved buyers like volume buyers.
+- Product cards show a wholesale tier row with a `· 10+ lots` volume hint.
+- The backend remains authoritative: `/checkout` computes `unit_price_applied` per line, which flows into the stored order, WhatsApp deep link, and receipt.
 
 **Consequences:**
-- A single order can have mixed pricing (some lines retail, some wholesale/approved).
+- A single order can have mixed pricing (some lines retail, some wholesale).
 - Keeps per-product fairness (can't buy 1 lot of a product that requires 5 minimum).
-- Schema supports this via `minimum_wholesale_lots` + `approved_price_per_lot` columns on `products`.
-- The backend remains authoritative: `/checkout` computes `unit_price_applied` per line, which flows into the stored order, WhatsApp deep link, and receipt. The client mirror (`frontend/src/lib/pricing.ts`) is display-only and must be kept in sync.
-
-**Status:** Lots (the trading unit), never individual items. `items_per_lot` is descriptive only.
+- Schema supports this via `minimum_wholesale_lots` column on `products`.
+- Lots (the trading unit), never individual items. `items_per_lot` is descriptive only.
