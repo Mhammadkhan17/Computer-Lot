@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog"
 import { AddProductModal } from "./add-product-modal"
 import { EditProductModal } from "./edit-product-modal"
+import { ProductFormDialog } from "@/components/product-form"
 import { useWebSocket } from "@/hooks/useWebSocket"
 import type { Product } from "@/types"
 
@@ -213,12 +214,16 @@ export function ProductsSection() {
               <Download className="mr-1 h-4 w-4" />
               Template
             </Button>
-            <AddProductModal onSuccess={() => window.location.reload()}>
-              <Button size="sm" className="bg-accent text-accent-foreground hover:bg-accent/90">
-                <Plus className="mr-1 h-4 w-4" />
-                Add Product
-              </Button>
-            </AddProductModal>
+            <ProductFormDialog
+              mode="create"
+              onSuccess={() => window.location.reload()}
+              trigger={
+                <Button size="sm" className="bg-accent text-accent-foreground hover:bg-accent/90">
+                  <Plus className="mr-1 h-4 w-4" />
+                  Add Product
+                </Button>
+              }
+            />
           </div>
         </CardHeader>
         <CardContent className="p-4">
@@ -328,14 +333,19 @@ export function ProductsSection() {
                       </td>
                       <td className="py-2">
                         <div className="flex gap-1">
-                            <EditProductModal product={product} onSuccess={() => window.location.reload()}>
-                            <button
-                              className="rounded-sm p-1 max-sm:min-h-[44px] max-sm:min-w-[44px] text-muted-foreground hover:text-foreground hover:bg-accent/10 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                              aria-label={`Edit ${product.title}`}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </button>
-                          </EditProductModal>
+                            <ProductFormDialog
+                              mode="edit"
+                              product={product}
+                              onSuccess={() => window.location.reload()}
+                              trigger={
+                                <button
+                                  className="rounded-sm p-1 max-sm:min-h-[44px] max-sm:min-w-[44px] text-muted-foreground hover:text-foreground hover:bg-accent/10 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                                  aria-label={`Edit ${product.title}`}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </button>
+                              }
+                            />
                             <button
                               className="rounded-sm p-1 max-sm:min-h-[44px] max-sm:min-w-[44px] text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                               aria-label={`Delete ${product.title}`}
