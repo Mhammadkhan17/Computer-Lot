@@ -1,32 +1,19 @@
-import json
-import uuid
-from datetime import datetime, timezone
-from pathlib import Path
+from supabase import Client
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
-DB_PATH = DATA_DIR / "sourcing_requests.json"
+_client: Client | None = None
 
 
-def _ensure_db():
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    if not DB_PATH.exists():
-        DB_PATH.write_text("[]")
-
-
-def _read_all() -> list[dict]:
-    _ensure_db()
-    return json.loads(DB_PATH.read_text())
-
-
-def _write_all(records: list[dict]):
-    _ensure_db()
-    DB_PATH.write_text(json.dumps(records, indent=2, default=str))
+def _get_client() -> Client:
+    global _client
+    if _client is None:
+        from app.database import get_service_role_supabase
+        _client = get_service_role_supabase()
+    return _client
 
 
 def create_request(data: dict) -> dict:
-    records = _read_all()
-    record = {
-        "id": str(uuid.uuid4()),
+    client = _get_client()
+    result = client.table("sourcing_requests").insert({
         "user_id": data["user_id"],
         "user_email": data.get("user_email"),
         "phone": data.get("phone") or None,
@@ -42,29 +29,37 @@ def create_request(data: dict) -> dict:
         "quantity_requested": data.get("quantity_requested", 1),
         "notes": data.get("notes", ""),
         "status": "pending",
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    }
-    records.append(record)
-    _write_all(records)
-    return record
+    }).execute()
+    return result.data[0] if result.data else {}
 
 
 def get_user_requests(user_id: str) -> list[dict]:
-    return [r for r in _read_all() if r["user_id"] == user_id]
+    client = _get_client()
+    result = (
+        client.table("sourcing_requests")
+        .select("*")
+        .eq("user_id", user_id)
+        .order("created_at", desc=True)
+        .execute()
+    )
+    return result.data or []
 
 
 def get_all_requests(status: str | None = None) -> list[dict]:
-    records = _read_all()
+    client = _get_client()
+    query = client.table("sourcing_requests").select("*")
     if status:
-        records = [r for r in records if r["status"] == status]
-    return records
+        query = query.eq("status", status)
+    result = query.order("created_at", desc=True).execute()
+    return result.data or []
 
 
 def update_request_status(request_id: str, new_status: str) -> dict | None:
-    records = _read_all()
-    for r in records:
-        if r["id"] == request_id:
-            r["status"] = new_status
-            _write_all(records)
-            return r
-    return None
+    client = _get_client()
+    result = (
+        client.table("sourcing_requests")
+        .update({"status": new_status})
+        .eq("id", request_id)
+        .execute()
+    )
+    return result.data[0] if result.data else None
