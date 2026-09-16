@@ -78,6 +78,7 @@ export function ExplorePage() {
   const [requestNotes, setRequestNotes] = useState("")
   const [requestPhone, setRequestPhone] = useState("")
   const [submitting, setSubmitting] = useState(false)
+  const [signInModal, setSignInModal] = useState(false)
 
   useEffect(() => {
     const supabase = createClient()
@@ -128,7 +129,7 @@ export function ExplorePage() {
 
   const handleRequest = (listing: ExploreListing) => {
     if (!user) {
-      router.push("/login?redirect=/explore")
+      setSignInModal(true)
       return
     }
     setRequestModal(listing)
@@ -441,6 +442,34 @@ export function ExplorePage() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={signInModal} onOpenChange={setSignInModal}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Sign In Required</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              You need to sign in to request lots and track your sourcing requests.
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                className="flex-1 border-border text-muted-foreground"
+                onClick={() => setSignInModal(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 bg-accent text-accent-foreground hover:bg-accent/90"
+                onClick={() => router.push("/login?redirect=/explore")}
+              >
+                Sign In
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
