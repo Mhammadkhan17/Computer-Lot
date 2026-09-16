@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from supabase import Client
 
-from app.database import get_supabase
+from app.database import get_supabase, get_user_supabase
 from app.database_writer import DatabaseWriter, get_db_writer
 from app.rate_limit import limiter
 from app.schemas.admin import AdminActionResponse, ExpireOrdersRequest
@@ -33,7 +33,7 @@ async def approve_profile(
     request: Request,
     profile_id: str,
     user: dict = Depends(get_current_user),
-    supabase: Client = Depends(get_supabase),
+    supabase: Client = Depends(get_user_supabase),
 ):
     _assert_admin(user, supabase)
 
@@ -54,7 +54,7 @@ async def reject_profile(
     request: Request,
     profile_id: str,
     user: dict = Depends(get_current_user),
-    supabase: Client = Depends(get_supabase),
+    supabase: Client = Depends(get_user_supabase),
 ):
     _assert_admin(user, supabase)
 
@@ -76,7 +76,7 @@ async def update_order_status(
     order_id: str,
     body: OrderStatusUpdate,
     user: dict = Depends(get_current_user),
-    supabase: Client = Depends(get_supabase),
+    supabase: Client = Depends(get_user_supabase),
     db_writer: DatabaseWriter = Depends(get_db_writer),
 ):
     _assert_admin(user, supabase)
@@ -155,7 +155,7 @@ TEMPLATE_ROW = {
 async def download_template(
     request: Request,
     user: dict = Depends(get_current_user),
-    supabase: Client = Depends(get_supabase),
+    supabase: Client = Depends(get_user_supabase),
 ):
     _assert_admin(user, supabase)
 
@@ -178,7 +178,7 @@ async def import_products(
     request: Request,
     file: UploadFile = File(...),
     user: dict = Depends(get_current_user),
-    supabase: Client = Depends(get_supabase),
+    supabase: Client = Depends(get_user_supabase),
 ):
     _assert_admin(user, supabase)
 
@@ -226,7 +226,7 @@ async def import_products(
 async def broadcast_product_update(
     request: Request,
     user: dict = Depends(get_current_user),
-    supabase: Client = Depends(get_supabase),
+    supabase: Client = Depends(get_user_supabase),
 ):
     _assert_admin(user, supabase)
     await get_manager().broadcast_to_role("product_update", {}, role="admin")
@@ -239,7 +239,7 @@ async def expire_orders(
     request: Request,
     body: ExpireOrdersRequest | None = None,
     user: dict = Depends(get_current_user),
-    supabase: Client = Depends(get_supabase),
+    supabase: Client = Depends(get_user_supabase),
 ):
     _assert_admin(user, supabase)
     older_than_hours = (body.older_than_hours if body else None) or 24

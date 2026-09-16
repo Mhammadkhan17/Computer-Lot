@@ -7,7 +7,7 @@ from slowapi.util import get_remote_address
 from supabase import Client
 
 from app.config import settings
-from app.database import get_supabase
+from app.database import get_supabase, get_user_supabase
 from app.explore_storage import (
     create_request,
     get_all_requests,
@@ -119,7 +119,7 @@ async def list_my_requests(
 async def list_all_requests(
     status_filter: str = Query("", alias="status"),
     user: dict = Depends(get_current_user),
-    supabase: Client = Depends(get_supabase),
+    supabase: Client = Depends(get_user_supabase),
 ):
     _assert_admin(user, supabase)
     return get_all_requests(status_filter or None)
@@ -130,7 +130,7 @@ async def change_request_status(
     request_id: str,
     body: StatusUpdate,
     user: dict = Depends(get_current_user),
-    supabase: Client = Depends(get_supabase),
+    supabase: Client = Depends(get_user_supabase),
 ):
     _assert_admin(user, supabase)
     valid = {"pending", "contacted", "declined"}
