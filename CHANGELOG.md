@@ -2,9 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
-Last updated: 2026-09-16 15:20 UTC
+Last updated: 2026-09-16 15:35 UTC
 
 ## [Unreleased]
+
+### Fix: cart drawer stays open on checkout + WhatsApp message cleanup (2026-09-16)
+
+#### Changed: cart drawer closes when clicking Checkout
+The cart drawer remained open after clicking the "Checkout" button. Added `onClick={close}` to the checkout link so the drawer closes immediately on navigation.
+
+- `frontend/src/components/cart-drawer.tsx`: checkout `<Link>` now calls `close()` on click
+
+#### Changed: WhatsApp message no longer includes receipt URL
+The WhatsApp deep link previously included a "View order" URL in the message body. Removed it — the message now contains only order details and the merchant's phone number.
+
+- `backend/app/routes/checkout.py`: removed `View order:` line from `_build_whatsapp_link`
 
 ### Deploy: Vercel production deployment (2026-09-16)
 
