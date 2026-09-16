@@ -33,7 +33,6 @@ def _build_whatsapp_link(
     for item in items:
         lines.append(f"- {item.quantity_ordered}x {item.title} = ${item.unit_price_applied:.2f} each")
     lines.append(f"Total: ${total_amount:.2f}")
-    lines.append(f"View order: {settings.frontend_url}/receipts/{readable_order_id}")
     message = "\n".join(lines)
     return f"https://wa.me/{settings.merchant_phone}?text={quote(message)}"
 

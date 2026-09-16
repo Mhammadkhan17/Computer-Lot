@@ -210,7 +210,7 @@ export function CartDrawer() {
                 className="flex-1 bg-accent text-accent-foreground hover:bg-accent/90"
                 asChild
               >
-                <Link href="/checkout">Checkout</Link>
+                <Link href="/checkout" onClick={close}>Checkout</Link>
               </Button>
             </div>
           </div>
