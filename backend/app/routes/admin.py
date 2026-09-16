@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from supabase import Client
 
-from app.database import get_supabase, get_user_supabase
+from app.database import get_supabase, get_user_supabase, get_service_role_supabase
 from app.database_writer import DatabaseWriter, get_db_writer
 from app.rate_limit import limiter
 from app.schemas.admin import AdminActionResponse, ExpireOrdersRequest
@@ -77,9 +77,10 @@ async def update_order_status(
     body: OrderStatusUpdate,
     user: dict = Depends(get_current_user),
     supabase: Client = Depends(get_user_supabase),
-    db_writer: DatabaseWriter = Depends(get_db_writer),
+    service_supabase: Client = Depends(get_service_role_supabase),
 ):
     _assert_admin(user, supabase)
+    db_writer = get_db_writer(service_supabase)
 
     valid_statuses = {"pending_whatsapp", "processing", "completed", "cancelled"}
     if body.status not in valid_statuses:
