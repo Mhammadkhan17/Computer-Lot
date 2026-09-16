@@ -134,20 +134,78 @@ CSV_HEADERS = [
     "available_stock_lots", "image_urls", "tags", "hardware_specifications",
 ]
 
-TEMPLATE_ROW = {
-    "title": "Example Product",
-    "sku": "EX-001",
-    "description": "A sample product description",
-    "grade": "Grade_A",
-    "items_per_lot": "1",
-    "retail_price_per_lot": "199.99",
-    "wholesale_price_per_lot": "149.99",
-    "minimum_wholesale_lots": "5",
-    "available_stock_lots": "20",
-    "image_urls": "https://example.com/img1.jpg, https://example.com/img2.jpg",
-    "tags": "example, sample, demo",
-    "hardware_specifications": '{"key": "value"}',
-}
+TEMPLATE_ROWS = [
+    {
+        "title": "Intel Core i7-12700K Desktop Processor",
+        "sku": "CPU-001",
+        "description": "12th Gen Alder Lake, 12 cores, 3.6GHz base clock",
+        "grade": "Grade_A",
+        "items_per_lot": "10",
+        "retail_price_per_lot": "249.99",
+        "wholesale_price_per_lot": "199.99",
+        "minimum_wholesale_lots": "5",
+        "available_stock_lots": "25",
+        "image_urls": "https://example.com/cpu-front.jpg, https://example.com/cpu-box.jpg",
+        "tags": "intel, cpu, lga1700, desktop",
+        "hardware_specifications": '{"socket": "LGA1700", "cores": 12, "threads": 20, "base_clock": "3.6GHz", "boost_clock": "5.0GHz"}',
+    },
+    {
+        "title": "Dell Latitude 5520 Business Laptop",
+        "sku": "LAP-001",
+        "description": "15.6 inch FHD, Intel i5-1135G7, 8GB RAM, 256GB SSD",
+        "grade": "Grade_B",
+        "items_per_lot": "5",
+        "retail_price_per_lot": "329.99",
+        "wholesale_price_per_lot": "279.99",
+        "minimum_wholesale_lots": "3",
+        "available_stock_lots": "15",
+        "image_urls": "https://example.com/laptop-open.jpg",
+        "tags": "laptop, dell, business, windows",
+        "hardware_specifications": '{"screen_size": "15.6 inches", "resolution": "1920x1080", "ram": "8GB DDR4", "storage": "256GB NVMe SSD", "processor": "Intel i5-1135G7"}',
+    },
+    {
+        "title": "NVIDIA GeForce RTX 3070 Graphics Card",
+        "sku": "GPU-001",
+        "description": "8GB GDDR6, PCIe 4.0, HDMI 2.1, DisplayPort 1.4a",
+        "grade": "Grade_A",
+        "items_per_lot": "8",
+        "retail_price_per_lot": "449.99",
+        "wholesale_price_per_lot": "389.99",
+        "minimum_wholesale_lots": "5",
+        "available_stock_lots": "10",
+        "image_urls": "https://example.com/gpu-front.jpg, https://example.com/gpu-side.jpg",
+        "tags": "gpu, nvidia, rtx, graphics",
+        "hardware_specifications": '{"memory": "8GB GDDR6", "cuda_cores": 5888, "base_clock": "1.5GHz", "boost_clock": "1.73GHz", "tdp": "220W"}',
+    },
+    {
+        "title": "Refurbished HP ProDesk 400 G7 Desktop",
+        "sku": "DSK-001",
+        "description": "Small form factor, Intel i5-10500, 16GB RAM, 512GB SSD",
+        "grade": "Grade_C",
+        "items_per_lot": "3",
+        "retail_price_per_lot": "189.99",
+        "wholesale_price_per_lot": "149.99",
+        "minimum_wholesale_lots": "10",
+        "available_stock_lots": "40",
+        "image_urls": "https://example.com/desktop-front.jpg",
+        "tags": "desktop, hp, refurbished, small-form-factor",
+        "hardware_specifications": '{"form_factor": "SFF", "processor": "Intel i5-10500", "ram": "16GB DDR4", "storage": "512GB SSD"}',
+    },
+    {
+        "title": "Mixed Lot - Keyboard and Mouse Sets",
+        "sku": "ACC-001",
+        "description": "Assorted wireless keyboard and mouse combos, various brands",
+        "grade": "For_Parts",
+        "items_per_lot": "50",
+        "retail_price_per_lot": "299.99",
+        "wholesale_price_per_lot": "249.99",
+        "minimum_wholesale_lots": "2",
+        "available_stock_lots": "8",
+        "image_urls": "https://example.com/keyboard-mouse.jpg",
+        "tags": "accessories, keyboard, mouse, wireless, lot",
+        "hardware_specifications": '{"condition": "Mixed - some may need repair", "brands": "Assorted", "connectivity": "USB/BT"}',
+    },
+]
 
 
 @router.get("/products/template")
@@ -162,7 +220,8 @@ async def download_template(
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=CSV_HEADERS)
     writer.writeheader()
-    writer.writerow(TEMPLATE_ROW)
+    for row in TEMPLATE_ROWS:
+        writer.writerow(row)
     output.seek(0)
 
     return StreamingResponse(
