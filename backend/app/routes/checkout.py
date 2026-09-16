@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from supabase import Client
 
 from app.config import settings
-from app.database import get_supabase
+from app.database import get_user_supabase
 from app.database_writer import get_db_writer, DatabaseWriter
 from app.notification import get_notifier, NotificationBroadcaster
 from app.pricing import compute_line_item_prices
@@ -44,7 +44,7 @@ async def create_checkout(
     request: Request,
     checkout_req: CheckoutRequest,
     user: dict = Depends(get_current_user),
-    supabase: Client = Depends(get_supabase),
+    supabase: Client = Depends(get_user_supabase),
     db_writer: DatabaseWriter = Depends(get_db_writer),
     notifier: NotificationBroadcaster = Depends(get_notifier),
 ):
