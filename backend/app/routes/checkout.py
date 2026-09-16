@@ -58,7 +58,7 @@ async def create_checkout(
 
     profile = profile_resp.data
     customer_name = profile.get("full_name", "Unknown")
-    customer_phone = profile.get("phone", "")
+    customer_phone = profile.get("phone") or ""
 
     product_ids = [item.product_id for item in checkout_req.items]
     products_resp = supabase.table("products").select("*").in_("id", product_ids).execute()
