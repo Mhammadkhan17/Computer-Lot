@@ -65,9 +65,14 @@ export function SourcingSection() {
       const res = await fetch(`${API_URL}/admin/explore/requests${params}`, {
         headers: { Authorization: `Bearer ${session.access_token}` },
       })
-      if (res.status === 401 || res.status === 403) {
+      if (res.status === 401) {
         toast.error("Session expired. Please sign in again.")
         router.push("/login")
+        return
+      }
+      if (res.status === 403) {
+        toast.error("Access denied. Admin privileges required.")
+        setLoading(false)
         return
       }
       if (!res.ok) throw new Error("Failed to fetch")

@@ -4,8 +4,10 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from supabase import Client
 
 from app.config import settings
+from app.database import get_supabase
 from app.explore_storage import (
     create_request,
     get_all_requests,
@@ -19,7 +21,7 @@ from app.schemas.explore import (
     SourcingRequestOut,
     StatusUpdate,
 )
-from app.utils.security import check_role, get_current_user
+from app.utils.security import get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["explore"])
@@ -27,6 +29,13 @@ limiter = Limiter(key_func=get_remote_address)
 
 BSTOCK_API = "https://search.bstock.com/v1/all-listings/listings"
 TARGET_CATEGORIES = {"electronics", "cell phones", "office supplies & equipment", "small appliances", "mixed lots"}
+
+
+def _assert_admin(user: dict, supabase: Client) -> None:
+    user_id = user["sub"]
+    profile_resp = supabase.table("profiles").select("role").eq("id", user_id).single().execute()
+    if not profile_resp.data or profile_resp.data.get("role") != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
 
 
 def _in_target_category(listing: dict) -> bool:
@@ -109,9 +118,9 @@ async def list_my_requests(
 async def list_all_requests(
     status_filter: str = Query("", alias="status"),
     user: dict = Depends(get_current_user),
+    supabase: Client = Depends(get_supabase),
 ):
-    if not check_role(user, "admin"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin only")
+    _assert_admin(user, supabase)
     return get_all_requests(status_filter or None)
 
 
@@ -120,9 +129,9 @@ async def change_request_status(
     request_id: str,
     body: StatusUpdate,
     user: dict = Depends(get_current_user),
+    supabase: Client = Depends(get_supabase),
 ):
-    if not check_role(user, "admin"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin only")
+    _assert_admin(user, supabase)
     valid = {"pending", "contacted", "declined"}
     if body.status not in valid:
         raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {', '.join(valid)}")
