@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation"
 import { createClient } from "@/utils/supabase/server"
-import { loadDashboardData } from "@/lib/dashboard-data"
 import { DashboardContent } from "./dashboard-content"
 
 export default async function DashboardPage() {
@@ -21,11 +20,5 @@ export default async function DashboardPage() {
     redirect("/")
   }
 
-  const initialData = await loadDashboardData(supabase).catch(() => ({
-    orders: [],
-    pendingProfiles: [],
-    products: [],
-  }))
-
-  return <DashboardContent initialData={initialData} />
+  return <DashboardContent />
 }
