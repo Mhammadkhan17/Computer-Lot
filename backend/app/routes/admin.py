@@ -21,8 +21,9 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 def _assert_admin(user: dict, supabase: Client) -> None:
     user_id = user["sub"]
-    profile_resp = supabase.table("profiles").select("role").eq("id", user_id).single().execute()
-    if not profile_resp.data or profile_resp.data.get("role") != "admin":
+    profile_resp = supabase.table("profiles").select("role").eq("id", user_id).execute()
+    rows = profile_resp.data or []
+    if not rows or rows[0].get("role") != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
 
 
