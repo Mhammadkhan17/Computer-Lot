@@ -2,9 +2,77 @@
 
 All notable changes to this project are documented in this file.
 
-Last updated: 2026-08-04 12:30 UTC
+Last updated: 2026-09-15 21:30 UTC
 
 ## [Unreleased]
+
+### Merge: test-features into main (2026-09-15)
+
+#### Merged: B-Stock Explore feature + DatabaseWriter refactor
+The `test-features` branch was merged into `main`, bringing significant new features and architectural improvements. This required resolving 12 merge conflicts across backend and frontend.
+
+**New Features:**
+- B-Stock Explore feature: browse external B-Stock listings, submit sourcing requests
+- Sourcing tab in admin dashboard for managing user sourcing requests
+- Add/Edit product modals (replaced `ProductFormDialog` with dedicated modals)
+- Notification broadcaster for real-time WebSocket updates
+- WhatsApp link builder function in checkout route
+
+**Architecture Changes:**
+- DatabaseWriter pattern for checkout and order management (replaces adapter-based approach)
+- Inlined CSV validation/normalization in admin routes (removed adapter dependencies)
+- Self-contained dashboard sections with client-side data fetching
+- New `app/database_writer.py` for atomic order operations
+- New `app/notification.py` for real-time broadcast
+- New `app/pricing.py` for line-item price computation
+
+**Files Added:**
+- `backend/app/database_writer.py`, `backend/app/notification.py`, `backend/app/pricing.py`
+- `backend/app/routes/explore.py`, `backend/app/schemas/explore.py`
+- `backend/tests/test_database_writer.py`, `backend/tests/test_notification.py`, `backend/tests/test_pricing.py`
+- `frontend/src/app/dashboard/sections/sourcing.tsx`, `frontend/src/app/explore/page.tsx`
+- `frontend/src/components/explore-card.tsx`, `frontend/src/components/explore-page.tsx`
+- `frontend/src/app/dashboard/sections/add-product-modal.tsx`, `edit-product-modal.tsx`
+- `supabase/migrations/002_sourcing_requests.sql`
+
+**Files Removed:**
+- Legacy adapter modules: `csv_parser.py`, `notification.py`, `order_intake.py`, `pricing.py`, `product_inserter.py`, `row_normalizer.py`, `row_validator.py`, `stock.py`, `txn.py`, `whatsapp.py`
+- `backend/app/rate_limit.py` (moved to main rate_limit module)
+- `frontend/src/components/product-form.tsx`, `frontend/src/lib/pricing.ts`
+
+### Fix: admin role check using correct Supabase client (2026-09-15)
+
+#### Fixed: sourcing tab "Access denied" for admin users
+Admin users were getting "Access denied" errors in the sourcing tab despite being logged in with admin privileges. The root cause was that `_assert_admin` in both `admin.py` and `explore.py` was using `get_supabase()` (anonymous client with no user auth token) to query the profiles table. RLS policies blocked anonymous reads.
+
+- `backend/app/routes/admin.py`: Changed all `Depends(get_supabase)` to `Depends(get_user_supabase)` so profile queries carry the user's JWT token
+- `backend/app/routes/explore.py`: Same change — admin endpoints now use authenticated client
+- `frontend/src/app/dashboard/sections/sourcing.tsx`: Added proper 403 handling ("Access denied" instead of "Session expired")
+
+### Fix: missing profile row crash (2026-09-15)
+
+#### Fixed: PGRST116 error when user has no profile row
+`_assert_admin` was using `.single().execute()` which throws an exception when no rows are found. Changed to `.execute()` with list check.
+
+- `backend/app/routes/admin.py`: `_assert_admin` now uses `.execute()` and checks `rows` list
+- `backend/app/routes/explore.py`: Same fix applied
+
+### Fix: missing modal components (2026-09-15)
+
+#### Fixed: build error — missing add-product-modal and edit-product-modal
+The merge missed two modal component files that `products.tsx` depends on.
+
+- Added `frontend/src/app/dashboard/sections/add-product-modal.tsx`
+- Added `frontend/src/app/dashboard/sections/edit-product-modal.tsx`
+
+### Fix: missing check_role function (2026-09-15)
+
+#### Fixed: ImportError — cannot import name 'check_role'
+The explore route was importing `check_role` from `app.utils.security` but it didn't exist.
+
+- `backend/app/utils/security.py`: Added `check_role(user, required_role)` function
+
+## [0.2.0] - 2026-08-04
 
 ### Auth: self-serve wholesale apply + role-aware navbar (2026-08-04)
 
