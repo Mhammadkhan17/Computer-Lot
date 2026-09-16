@@ -2,9 +2,46 @@
 
 All notable changes to this project are documented in this file.
 
-Last updated: 2026-09-15 21:30 UTC
+Last updated: 2026-09-16 15:20 UTC
 
 ## [Unreleased]
+
+### Deploy: Vercel production deployment (2026-09-16)
+
+#### Added: frontend + backend deployed to Vercel with git-push deploys
+Both the Next.js frontend and FastAPI backend are now deployed to Vercel and auto-deploy on push to `main`.
+
+- **Frontend**: `https://frontend-lac-psi-20.vercel.app` (project `frontend`, `prj_PNA1BbhHzfscGIgEoxeeudBW2AsU`)
+- **Backend**: `https://backend-phi-one-35d9ykv3fu.vercel.app` (project `backend`)
+- `NEXT_PUBLIC_API_URL` env var set on frontend to point at the backend production URL
+- CORS origins updated to include both frontend production and preview URLs
+
+### Fix: checkout 500 errors — three root causes resolved (2026-09-16)
+
+#### Fixed: psycopg2 connection timeout (direct PostgreSQL unreachable from Vercel)
+The `DatabaseWriter` was using `psycopg2` to connect directly to `ybwbwllmryjdfqvfpcik.supabase.co:6543` — but that hostname is the Supabase API gateway (Cloudflare CDN), not the PostgreSQL pooler. TCP connections timed out.
+
+- `backend/app/database_writer.py`: replaced psycopg2 with the existing `create_order` stored procedure called via `supabase.rpc()` (HTTP/REST). The atomic transaction (ADR-002) is preserved via the RPC.
+- `backend/app/routes/checkout.py`: injects `service_role` Supabase client for the RPC call
+- `backend/app/routes/admin.py`: updated to use `get_service_role_supabase` dependency
+
+#### Fixed: RLS blocking anonymous client on profiles query
+The checkout used `get_supabase()` (anonymous client, no user auth) to query the profiles table. RLS blocked the read, returning 0 rows.
+
+- `backend/app/routes/checkout.py`: changed to `get_user_supabase()` so the query carries the caller's JWT
+
+#### Fixed: null customer_phone violating NOT NULL constraint
+`profile.get("phone", "")` returns `None` when the key exists with a `null` value, violating the `orders.customer_phone` NOT NULL constraint.
+
+- `backend/app/routes/checkout.py`: changed to `profile.get("phone") or ""` which coerces `None` to `""`
+
+#### Fixed: CORS headers missing on 500 error responses
+The unhandled exception handler in `main.py` was not adding CORS headers to error responses, causing browsers to show CORS errors instead of the actual backend error.
+
+- `backend/app/main.py`: exception handler now adds CORS headers to error responses
+
+#### Security: console.error leak in checkout
+- `frontend/src/components/checkout-button.tsx`: changed `console.error("Checkout error:", err)` to `console.error("Checkout error occurred")` to avoid leaking response details
 
 ### Merge: test-features into main (2026-09-15)
 
