@@ -1,0 +1,28 @@
+# Python
+.venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+*.pyc
+
+# Tests
+tests/
+.coverage
+htmlcov/
+
+# Environment
+.env
+.env.*
+
+# Data
+data/
+
+# IDE
+.vscode/
+.idea/
+
+# Dev/seed scripts
+seed.py
+update_images.py

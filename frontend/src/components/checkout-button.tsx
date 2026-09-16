@@ -65,8 +65,8 @@ export function CheckoutButton() {
       const success = data as CheckoutResponse
       clearCart()
       window.location.href = success.whatsapp_deep_link
-    } catch (err) {
-      console.error("Checkout error:", err)
+    } catch {
+      console.error("Checkout error occurred")
       setError("Network error. Please try again.")
     } finally {
       setLoading(false)
