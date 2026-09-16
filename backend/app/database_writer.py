@@ -3,9 +3,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Literal
 
-import psycopg2
-
-from app.config import settings
+from supabase import Client
 
 logger = logging.getLogger(__name__)
 
@@ -43,14 +41,8 @@ class DatabaseWriter(ABC):
 
 
 class PostgresDatabaseWriter(DatabaseWriter):
-    def _get_connection(self) -> psycopg2.extensions.connection:
-        return psycopg2.connect(
-            dbname=settings.supabase_db_name,
-            user=settings.supabase_db_user,
-            password=settings.supabase_db_password,
-            host=settings.supabase_db_host,
-            port=settings.supabase_db_port,
-        )
+    def __init__(self, supabase: Client):
+        self._supabase = supabase
 
     def write_checkout_order(
         self,
@@ -60,62 +52,56 @@ class PostgresDatabaseWriter(DatabaseWriter):
         priced_items: list,
         total_amount: float,
     ) -> WriteOrderResult:
-        conn = self._get_connection()
         try:
-            with conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        INSERT INTO orders (user_id, customer_name, customer_phone, total_amount)
-                        VALUES (%s, %s, %s, %s)
-                        RETURNING id, readable_order_id
-                        """,
-                        (user_id, customer_name, customer_phone, total_amount),
-                    )
-                    order_row = cur.fetchone()
-                    order_id = order_row[0]
-                    readable_order_id = order_row[1]
+            items_json = [
+                {
+                    "product_id": item.product_id,
+                    "quantity_ordered": item.quantity_ordered,
+                    "unit_price_applied": float(item.unit_price_applied),
+                }
+                for item in priced_items
+            ]
 
-                    item_records = []
-                    for item in priced_items:
-                        cur.execute(
-                            """
-                            INSERT INTO order_items (order_id, product_id, quantity_ordered, unit_price_applied)
-                            VALUES (%s, %s, %s, %s)
-                            """,
-                            (order_id, item.product_id, item.quantity_ordered, item.unit_price_applied),
-                        )
-                        item_records.append({
-                            "product_id": item.product_id,
-                            "title": item.title,
-                            "quantity_ordered": item.quantity_ordered,
-                            "unit_price_applied": item.unit_price_applied,
-                        })
+            result = self._supabase.rpc(
+                "create_order",
+                {
+                    "p_user_id": user_id,
+                    "p_customer_name": customer_name,
+                    "p_customer_phone": customer_phone,
+                    "p_total_amount": float(total_amount),
+                    "p_items": items_json,
+                },
+            ).execute()
 
-                    for item in priced_items:
-                        cur.callproc("decrement_stock_inventory", (item.product_id, item.quantity_ordered))
-                        dec_result = cur.fetchone()
-                        if not dec_result or not dec_result[0]:
-                            raise RuntimeError(
-                                f"Failed to decrement stock for product {item.product_id}"
-                            )
+            if not result.data:
+                return WriteOrderResult(success=False, error="db_error")
+
+            order_data = result.data
+            order_id = order_data.get("order_id")
+            readable_order_id = order_data.get("readable_order_id")
+
+            item_records = [
+                {
+                    "product_id": item.product_id,
+                    "title": item.title,
+                    "quantity_ordered": item.quantity_ordered,
+                    "unit_price_applied": item.unit_price_applied,
+                }
+                for item in priced_items
+            ]
 
             updated_stock: dict[str, int] = {}
-            conn2 = self._get_connection()
-            try:
-                with conn2:
-                    with conn2.cursor() as cur2:
-                        product_ids = list(set(item.product_id for item in priced_items))
-                        for pid in product_ids:
-                            cur2.execute(
-                                "SELECT available_stock_lots FROM products WHERE id = %s",
-                                (pid,),
-                            )
-                            row = cur2.fetchone()
-                            if row:
-                                updated_stock[pid] = row[0]
-            finally:
-                conn2.close()
+            product_ids = list(set(item.product_id for item in priced_items))
+            for pid in product_ids:
+                stock_resp = (
+                    self._supabase.table("products")
+                    .select("available_stock_lots")
+                    .eq("id", pid)
+                    .single()
+                    .execute()
+                )
+                if stock_resp.data:
+                    updated_stock[pid] = stock_resp.data["available_stock_lots"]
 
             return WriteOrderResult(
                 success=True,
@@ -125,47 +111,40 @@ class PostgresDatabaseWriter(DatabaseWriter):
                 items=item_records,
                 updated_stock=updated_stock,
             )
-        except RuntimeError:
-            logger.warning("Checkout transaction rolled back (race condition on stock)")
-            return WriteOrderResult(success=False, error="race_condition")
         except Exception as e:
+            error_str = str(e).lower()
+            if "insufficient stock" in error_str or "race condition" in error_str:
+                logger.warning("Checkout transaction rolled back (stock race condition)")
+                return WriteOrderResult(success=False, error="race_condition")
             logger.error("Checkout transaction failed: %s", e)
             return WriteOrderResult(success=False, error="db_error")
-        finally:
-            conn.close()
 
     def update_order_status(self, order_id: str, new_status: str) -> tuple[bool, str | None, int | None]:
-        conn = self._get_connection()
         try:
-            with conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "UPDATE orders SET status = %s WHERE id = %s RETURNING id, user_id, readable_order_id",
-                        (new_status, order_id),
-                    )
-                    row = cur.fetchone()
-                    if not row:
-                        return False, None, None
-                    return True, row[1], row[2]
+            result = (
+                self._supabase.table("orders")
+                .update({"status": new_status})
+                .eq("id", order_id)
+                .execute()
+            )
+            if not result.data:
+                return False, None, None
+            row = result.data[0]
+            return True, row.get("user_id"), row.get("readable_order_id")
         except Exception as e:
             logger.error("Order status update failed: %s", e)
             return False, None, None
-        finally:
-            conn.close()
 
     def restock_product(self, product_id: str, quantity: int) -> bool:
-        conn = self._get_connection()
         try:
-            with conn:
-                with conn.cursor() as cur:
-                    cur.callproc("increment_stock_inventory", (product_id, quantity))
-                    result = cur.fetchone()
-                    return bool(result and result[0])
+            result = self._supabase.rpc(
+                "increment_stock_inventory",
+                {"row_id": product_id, "steps": quantity},
+            ).execute()
+            return bool(result.data)
         except Exception as e:
             logger.error("Restock failed for %s: %s", product_id, e)
             return False
-        finally:
-            conn.close()
 
 
 class InMemoryDatabaseWriter(DatabaseWriter):
@@ -241,8 +220,11 @@ class InMemoryDatabaseWriter(DatabaseWriter):
 _writer_instance: DatabaseWriter | None = None
 
 
-def get_db_writer() -> DatabaseWriter:
+def get_db_writer(supabase: Client | None = None) -> DatabaseWriter:
     global _writer_instance
     if _writer_instance is None:
-        _writer_instance = PostgresDatabaseWriter()
+        if supabase is None:
+            from app.database import get_service_role_supabase
+            supabase = get_service_role_supabase()
+        _writer_instance = PostgresDatabaseWriter(supabase)
     return _writer_instance
