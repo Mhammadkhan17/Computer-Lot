@@ -50,3 +50,6 @@ supabase/.temp/
 
 # Logs
 *.log
+
+# Runtime data
+backend/data/

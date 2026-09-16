@@ -109,3 +109,8 @@ async def get_access_token(
             detail="Missing authorization header",
         )
     return credentials.credentials
+
+
+def check_role(user: dict, required_role: str) -> bool:
+    """Check if user has the required role."""
+    return user.get("role") == required_role
