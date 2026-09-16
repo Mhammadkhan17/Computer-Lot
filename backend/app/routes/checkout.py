@@ -49,7 +49,10 @@ async def create_checkout(
     notifier: NotificationBroadcaster = Depends(get_notifier),
 ):
     user_id = user["sub"]
-    profile_resp = supabase.table("profiles").select("*").eq("id", user_id).single().execute()
+    try:
+        profile_resp = supabase.table("profiles").select("*").eq("id", user_id).single().execute()
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
     if not profile_resp.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
 
