@@ -2,9 +2,15 @@
 
 import { Suspense, useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
-import { usePathname, useSearchParams } from "next/navigation"
+import { usePathname, useSearchParams, useRouter } from "next/navigation"
 import { ShoppingCart, LayoutDashboard, Compass } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { useCart } from "@/hooks/useCart"
 import { createClient } from "@/utils/supabase/client"
 import { ProfileDropdown } from "@/components/profile-dropdown"
@@ -36,10 +42,12 @@ function AuthLinks() {
 }
 
 export function Navbar() {
+  const router = useRouter()
   const totalItems = useCart((s) => s.totalItems())
   const setCartOpen = useCart((s) => s.setCartOpen)
   const [user, setUser] = useState<{ id: string; email?: string; role?: string } | null>(null)
   const [mounted, setMounted] = useState(false)
+  const [signInModal, setSignInModal] = useState(false)
   const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null)
   const activeUserIdRef = useRef<string | null>(null)
 
@@ -119,13 +127,23 @@ export function Navbar() {
         </Link>
 
         <div className="hidden sm:flex items-center gap-1">
-          <Link
-            href="/explore"
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <Compass className="h-4 w-4" aria-hidden="true" />
-            Explore
-          </Link>
+          {user ? (
+            <Link
+              href="/explore"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <Compass className="h-4 w-4" aria-hidden="true" />
+              Explore
+            </Link>
+          ) : (
+            <button
+              onClick={() => setSignInModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <Compass className="h-4 w-4" aria-hidden="true" />
+              Explore
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -169,6 +187,34 @@ export function Navbar() {
           )}
         </div>
       </div>
+
+      <Dialog open={signInModal} onOpenChange={setSignInModal}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Sign In Required</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Sign in to explore B-Stock listings and submit sourcing requests.
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                className="flex-1 border-border text-muted-foreground"
+                onClick={() => setSignInModal(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 bg-accent text-accent-foreground hover:bg-accent/90"
+                onClick={() => router.push("/login?redirect=/explore")}
+              >
+                Sign In
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </header>
   )
 }
