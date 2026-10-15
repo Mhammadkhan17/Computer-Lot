@@ -1,5 +1,7 @@
 # Computer-Lot — Hybrid Computer Lot Liquidation Platform
 
+[![Live](https://img.shields.io/badge/Live-frontend.vercel.app-000?style=for-the-badge&logo=vercel)](https://frontend-lac-psi-20.vercel.app)
+
 ![GitHub Stars](https://img.shields.io/github/stars/Mhammadkhan17/Computer-Lot)
 ![GitHub Issues](https://img.shields.io/github/issues/Mhammadkhan17/Computer-Lot)
 ![Next.js](https://img.shields.io/badge/Next.js%2015.5-App%20Router-black?logo=nextdotjs)
