@@ -9,10 +9,12 @@ node_modules/
 .pnp
 .pnp.js
 
-# opencode auto-generated plugin deps
-.opencode/node_modules/
-.opencode/package.json
-.opencode/package-lock.json
+# Agent tooling (not app code)
+.agents/
+.opencode/
+.superpowers/
+skills-lock.json
+opencode.jsonc
 
 # Next.js
 .next/
@@ -56,3 +58,15 @@ backend/data/
 .vercel/
 .env.local
 .env.local.*
+
+# Old planning docs / reports (not part of the app)
+plan-remaining-candidates.md
+revert_plan.md
+security-report.md
+security-report-round3.md
+security-todo.txt
+setup-ecc.txt
+deploy-plan.md
+backend-deploy.md
+references/
+docs/superpowers/

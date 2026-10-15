@@ -34,7 +34,7 @@ export function ProductCard({ product, isAdmin }: ProductCardProps) {
   const imageUrl = product.images?.[0]
 
   return (
-    <Card className="flex flex-col overflow-hidden border-border bg-card shadow-none">
+    <Card className="card-hover flex flex-col overflow-hidden border-border bg-card shadow-none">
       <Link href={`/products/${product.id}`} className="flex flex-1 flex-col">
         <div className="relative aspect-[4/3] overflow-hidden bg-muted">
           {imageUrl && !imgError ? (

@@ -60,12 +60,12 @@ export function FeaturesSection() {
           {features.map((feature) => (
             <div
               key={feature.title}
-              className="border border-border p-5 transition-colors hover:border-accent/30"
+              className="border border-border p-5 transition-colors duration-150 hover:border-accent/30"
             >
               <div className="flex h-9 w-9 items-center justify-center bg-accent/10">
                 <feature.icon className="h-5 w-5 text-accent" aria-hidden="true" />
               </div>
-              <h3 className="mt-4 font-display text-sm font-semibold text-foreground">
+              <h3 className="mt-3 font-display text-sm font-semibold text-foreground">
                 {feature.title}
               </h3>
               <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">

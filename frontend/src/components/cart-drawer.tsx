@@ -87,9 +87,10 @@ export function CartDrawer() {
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {items.length === 0 && (
             <div className="flex h-full flex-col items-center justify-center text-muted-foreground">
-              <ShoppingCart className="mb-2 h-12 w-12" aria-hidden="true" />
-              <p className="text-sm">Your cart is empty</p>
-              <Button variant="link" onClick={close} asChild className="text-primary">
+              <ShoppingCart className="mb-3 h-10 w-10 opacity-40" aria-hidden="true" />
+              <p className="text-sm font-medium">Your cart is empty</p>
+              <p className="mt-1 text-xs text-muted-foreground">Browse the catalog to add lots.</p>
+              <Button variant="link" onClick={close} asChild className="mt-2 text-primary">
                 <Link href="/">Browse products</Link>
               </Button>
             </div>
@@ -172,19 +173,19 @@ export function CartDrawer() {
             </div>
 
             {totalLotsCount < 10 && (
-              <div className="space-y-1">
+              <div className="space-y-1.5">
                 <div className="flex justify-between text-xs text-muted-foreground">
                   <span>Wholesale pricing</span>
-                  <span>{totalLotsCount}/10 lots</span>
+                  <span className="font-mono">{totalLotsCount}/10 lots</span>
                 </div>
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                <div className="h-1.5 w-full overflow-hidden bg-muted">
                   <div
-                    className="h-full bg-accent"
+                    className="h-full bg-accent transition-all duration-300"
                     style={{ width: `${Math.min(100, (totalLotsCount / 10) * 100)}%` }}
                   />
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Add {10 - totalLotsCount} more lots to unlock wholesale pricing.
+                  Add {10 - totalLotsCount} more lot{10 - totalLotsCount !== 1 ? "s" : ""} to unlock wholesale pricing.
                 </p>
               </div>
             )}

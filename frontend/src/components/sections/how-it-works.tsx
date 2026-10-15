@@ -41,7 +41,7 @@ export function HowItWorks() {
         <div className="mt-12 grid gap-6 md:grid-cols-3">
           {steps.map((step, i) => (
             <div key={step.title} className="relative border border-border p-6 bg-background">
-              <span className="flex h-10 w-10 items-center justify-center font-mono text-sm font-bold text-accent-foreground bg-accent rounded-full">
+              <span className="flex h-10 w-10 items-center justify-center font-mono text-sm font-bold text-accent-foreground bg-accent">
                 {i + 1}
               </span>
               <div className="mt-4 flex h-10 w-10 items-center justify-center bg-accent/10">

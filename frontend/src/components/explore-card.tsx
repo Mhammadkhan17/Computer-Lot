@@ -46,7 +46,7 @@ export function ExploreCard({ listing, onRequest, onDetail, isAuthenticated }: E
     : null
 
   return (
-    <Card className="flex flex-col overflow-hidden border-border bg-card shadow-none cursor-pointer" onClick={() => onDetail(listing)}>
+    <Card className="card-hover flex flex-col overflow-hidden border-border bg-card shadow-none cursor-pointer" onClick={() => onDetail(listing)}>
       <div className="relative aspect-[4/3] overflow-hidden bg-muted">
         {listing.image_url && !imgError ? (
           <img

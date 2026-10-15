@@ -45,10 +45,10 @@ export function HeroSection({ products }: HeroProps) {
       <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.015)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.015)_1px,transparent_1px)] bg-[length:48px_48px] pointer-events-none" />
       <div className="absolute top-0 right-0 w-1/3 h-full bg-gradient-to-l from-accent/5 to-transparent pointer-events-none" />
 
-      <div className="relative mx-auto max-w-7xl px-4 py-16 md:py-24">
-        <div className="grid gap-12 md:grid-cols-2 md:items-end">
+      <div className="relative mx-auto max-w-7xl px-4 py-14 md:py-20">
+        <div className="grid gap-10 md:grid-cols-2 md:items-end">
           <div>
-            <div className="mb-4 flex items-center gap-3 font-mono text-xs font-medium tracking-[0.15em] text-accent">
+            <div className="mb-3 flex items-center gap-3 font-mono text-xs font-medium tracking-[0.15em] text-accent">
               <span className="h-px w-6 bg-accent" />
               INVENTORY AUCTION
             </div>
@@ -56,29 +56,29 @@ export function HeroSection({ products }: HeroProps) {
               Computer{" "}
               <span className="text-accent">Lots</span>
             </h1>
-            <p className="mt-4 max-w-lg text-sm leading-relaxed text-text-dark-muted md:text-base">
+            <p className="mt-3 max-w-lg text-sm leading-relaxed text-text-dark-muted md:text-base">
               Wholesale and retail computer component lots.
               Every lot is inspected, graded, and ready to ship
               from our warehouse. No minimums on retail orders.
             </p>
-            <div className="mt-8 flex flex-wrap gap-3">
+            <div className="mt-7 flex flex-wrap gap-3">
               <a
                 href="#catalog"
-                className="inline-flex items-center gap-2 bg-accent px-5 py-2.5 text-sm font-semibold text-accent-foreground transition-all hover:bg-accent/90"
+                className="inline-flex items-center gap-2 bg-accent px-5 py-2.5 text-sm font-semibold text-accent-foreground transition-colors duration-150 hover:bg-accent/90"
               >
                 Browse Catalog
                 <ArrowDown className="h-4 w-4" />
               </a>
               <a
                 href="#wholesale"
-                className="inline-flex items-center gap-2 border border-white/20 px-5 py-2.5 text-sm font-semibold text-white transition-all hover:bg-white/10"
+                className="inline-flex items-center gap-2 border border-white/20 px-5 py-2.5 text-sm font-semibold text-white transition-colors duration-150 hover:bg-white/10"
               >
                 Wholesale Pricing
               </a>
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-x-10 gap-y-6">
+          <div className="flex gap-8">
             <div>
               <div className="font-mono text-3xl font-bold tracking-tight text-white md:text-4xl">
                 {totalLots}
@@ -87,6 +87,7 @@ export function HeroSection({ products }: HeroProps) {
                 TOTAL LOTS
               </div>
             </div>
+            <div className="h-12 w-px bg-white/10 self-center" />
             <div>
               <div className="font-mono text-3xl font-bold tracking-tight text-white md:text-4xl">
                 {products.length}
@@ -98,11 +99,11 @@ export function HeroSection({ products }: HeroProps) {
           </div>
         </div>
 
-        <div className="mt-12 flex flex-wrap gap-2">
+        <div className="mt-10 flex flex-wrap gap-2">
           {activeGrades.map((grade) => (
             <div
               key={grade}
-              className="flex items-center gap-2 border border-surface-dark-border px-3 py-1.5"
+              className="flex items-center gap-2 border border-white/10 px-3 py-1.5"
             >
               <span
                 className={`flex h-5 w-5 items-center justify-center font-mono text-[10px] font-bold text-white ${gradeColors[grade]}`}
