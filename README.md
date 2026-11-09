@@ -2,8 +2,6 @@
 
 [![Live](https://img.shields.io/badge/Live-frontend.vercel.app-000?style=for-the-badge&logo=vercel)](https://frontend-lac-psi-20.vercel.app)
 
-![GitHub Stars](https://img.shields.io/github/stars/Mhammadkhan17/Computer-Lot)
-![GitHub Issues](https://img.shields.io/github/issues/Mhammadkhan17/Computer-Lot)
 ![Next.js](https://img.shields.io/badge/Next.js%2015.5-App%20Router-black?logo=nextdotjs)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.141-009485?logo=fastapi)
 ![Supabase](https://img.shields.io/badge/Supabase-Database%20%2B%20Auth-3ECF85?logo=supabase)
@@ -379,20 +377,6 @@ Copy from `frontend/.env.example` and `backend/.env.example` — never commit re
 
 ---
 
-## Contributing
+## License
 
-1. Read [`AGENTS.md`](./AGENTS.md) — its rules are non-negotiable for this stack.
-2. Consult the relevant ADR in [`docs/adr/`](./docs/adr) before changing pricing,
-   stock, or auth behavior.
-3. Prefer **Server Components** for reads and route writes through **FastAPI**
-   (ADR-003). Never bypass `decrement_stock_inventory` for stock changes.
-4. Keep `service_role` scoped to `/checkout` only (ADR-009); never in frontend or
-   other backend routes.
-5. Run `npx tsc --noEmit` + `npm run lint` + `pytest` before opening a PR.
-
-Happy liquidating! 🚀
-
----
-
-*Generated from the actual codebase. All listed paths, scripts, and versions were
-verified against the repository on 2026-08-04.*
+MIT © [Mhammadkhan17](https://github.com/Mhammadkhan17)
